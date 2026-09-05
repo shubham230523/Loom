@@ -10,6 +10,7 @@ from backend.app.api.errors import (
     validation_error_handler,
     universal_error_handler
 )
+from backend.app.api.v1 import api_v1_router
 
 # Initialize structured logging
 setup_logging(service_name=settings.APP_NAME)
@@ -19,6 +20,9 @@ app = FastAPI(
     description="Autonomous collaboration for modern development teams.",
     version="1.0.0",
 )
+
+# Register Routers
+app.include_router(api_v1_router, prefix="/api/v1")
 
 # Error Handlers
 app.add_exception_handler(LoomError, loom_error_handler)
