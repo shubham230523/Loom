@@ -1,3 +1,19 @@
 from .session import engine, SessionLocal, Base, get_db
+from .models import User, GitHubAccount, Repository, Issue, Opportunity, Contribution, AgentRun, AgentEvent, TestRun, CodeReview
 
-__all__ = ["engine", "SessionLocal", "Base", "get_db"]
+__all__ = [
+    "engine",
+    "SessionLocal",
+    "Base",
+    "get_db",
+    "User",
+    "GitHubAccount",
+    "Repository",
+    "Issue",
+    "Opportunity",
+    "Contribution",
+    "AgentRun",
+    "AgentEvent",
+    "TestRun",
+    "CodeReview"
+]
