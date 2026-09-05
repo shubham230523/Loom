@@ -1,4 +1,5 @@
 import { View } from 'react-native';
+import { useRouter } from 'expo-router';
 import { ScreenContainer } from '@/components/ui/screen-container';
 import { Text } from '@/components/ui/text';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -7,6 +8,7 @@ import { Divider } from '@/components/ui/divider';
 import { Button } from '@/components/ui/button';
 
 export default function HomeScreen() {
+  const router = useRouter();
   return (
     <ScreenContainer scrollable className="py-6" maxWidth={1200}>
       <View className="mb-8">
@@ -43,7 +45,12 @@ export default function HomeScreen() {
                 <Text variant="small" className="mb-4">
                   Find repositories where your contributions can make an impact.
                 </Text>
-                <Button variant="outline" size="sm" label="Explore Feed" />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  label="Explore Feed"
+                  onPress={() => router.push('/(tabs)/discover')}
+                />
               </CardContent>
             </Card>
           </View>

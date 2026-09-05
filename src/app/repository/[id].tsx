@@ -1,11 +1,10 @@
 import { useLocalSearchParams, Stack } from 'expo-router';
-import { View, ScrollView, Image, Pressable, Linking } from 'react-native';
+import { View, Image, Linking } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { SymbolView } from 'expo-symbols';
 import { ScreenContainer } from '@/components/ui/screen-container';
 import { Text } from '@/components/ui/text';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Divider } from '@/components/ui/divider';
 import { LoadingState } from '@/components/ui/loading-state';
@@ -63,7 +62,7 @@ export default function RepositoryDetailsScreen() {
             resizeMode="cover"
           />
         </View>
-        <Text variant="title" className="text-3xl font-bold mb-1">{repo.name}</Text>
+        <Text variant="title" className="text-3xl font-bold mb-1 text-center">{repo.name}</Text>
         <Text variant="muted" className="text-lg">by {repo.owner.login}</Text>
       </View>
 
@@ -84,7 +83,7 @@ export default function RepositoryDetailsScreen() {
           </Button>
         </View>
 
-        {/* Description */}
+        {/* About */}
         <Card>
           <CardHeader>
             <CardTitle><Text variant="subtitle">About</Text></CardTitle>
@@ -150,7 +149,7 @@ function InfoCard({ label, value, icon, iconColor }: { label: string; value: str
     <Card className="flex-1 min-w-[140px] items-center py-4">
       <SymbolView name={icon} size={20} tintColor={iconColor || theme.textSecondary} className="mb-2" />
       <Text variant="small" className="text-muted-foreground mb-1">{label}</Text>
-      <Text weight="bold">{value}</Text>
+      <Text weight="bold" className="text-center">{value}</Text>
     </Card>
   );
 }

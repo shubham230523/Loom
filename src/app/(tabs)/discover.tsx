@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { View, Pressable, FlatList, Image } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 import { useQuery } from '@tanstack/react-query';
+import { useRouter } from 'expo-router';
 import { ScreenContainer } from '@/components/ui/screen-container';
 import { Text } from '@/components/ui/text';
 import { Input } from '@/components/ui/input';
@@ -16,6 +17,7 @@ import { GitHubRepository } from '@/types/repository';
 
 export default function DiscoverScreen() {
   const theme = useTheme();
+  const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
 
@@ -31,40 +33,45 @@ export default function DiscoverScreen() {
   }, []);
 
   const renderRepository = ({ item }: { item: GitHubRepository }) => (
-    <Card className="mb-4">
-      <View className="flex-row gap-3 items-center mb-2">
-        <Image
-          source={{ uri: item.owner.avatar_url }}
-          className="w-6 h-6 rounded-full"
-        />
-        <Text variant="small" weight="medium" className="text-muted-foreground">
-          {item.owner.login}
-        </Text>
-      </View>
-      <Text variant="subtitle" className="mb-1">{item.name}</Text>
-      {item.description && (
-        <Text variant="small" className="text-muted-foreground mb-3" numberOfLines={2}>
-          {item.description}
-        </Text>
-      )}
-      <View className="flex-row flex-wrap gap-2">
-        {item.language && (
-          <Badge variant="outline" label={item.language} />
+    <Pressable
+      onPress={() => router.push(`/repository/${item.id}`)}
+      style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
+    >
+      <Card className="mb-4">
+        <View className="flex-row gap-3 items-center mb-2">
+          <Image
+            source={{ uri: item.owner.avatar_url }}
+            className="w-6 h-6 rounded-full"
+          />
+          <Text variant="small" weight="medium" className="text-muted-foreground">
+            {item.owner.login}
+          </Text>
+        </View>
+        <Text variant="subtitle" className="mb-1">{item.name}</Text>
+        {item.description && (
+          <Text variant="small" className="text-muted-foreground mb-3" numberOfLines={2}>
+            {item.description}
+          </Text>
         )}
-        <View className="flex-row items-center gap-1">
-          <SymbolView name="star.fill" size={12} tintColor="#EAB308" />
-          <Text variant="small" className="text-muted-foreground">
-            {(item.stargazers_count / 1000).toFixed(1)}k
-          </Text>
+        <View className="flex-row flex-wrap gap-2">
+          {item.language && (
+            <Badge variant="outline" label={item.language} />
+          )}
+          <View className="flex-row items-center gap-1">
+            <SymbolView name="star.fill" size={12} tintColor="#EAB308" />
+            <Text variant="small" className="text-muted-foreground">
+              {(item.stargazers_count / 1000).toFixed(1)}k
+            </Text>
+          </View>
+          <View className="flex-row items-center gap-1">
+            <SymbolView name="arrow.branch" size={12} tintColor={theme.textSecondary} />
+            <Text variant="small" className="text-muted-foreground">
+              {item.forks_count}
+            </Text>
+          </View>
         </View>
-        <View className="flex-row items-center gap-1">
-          <SymbolView name="arrow.branch" size={12} tintColor={theme.textSecondary} />
-          <Text variant="small" className="text-muted-foreground">
-            {item.forks_count}
-          </Text>
-        </View>
-      </View>
-    </Card>
+      </Card>
+    </Pressable>
   );
 
   const renderContent = () => {

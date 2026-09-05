@@ -11,6 +11,7 @@ export interface GitHubRepository {
   stargazers_count: number;
   forks_count: number;
   language: string | null;
+  default_branch: string;
   updated_at: string;
 }
 
