@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
@@ -11,14 +12,24 @@ from backend.app.api.errors import (
     universal_error_handler
 )
 from backend.app.api.v1 import api_v1_router
+from backend.app.services.redis import redis_service
 
 # Initialize structured logging
 setup_logging(service_name=settings.APP_NAME)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Connect to Redis
+    await redis_service.connect()
+    yield
+    # Shutdown: Disconnect from Redis
+    await redis_service.disconnect()
 
 app = FastAPI(
     title=settings.APP_NAME,
     description="Autonomous collaboration for modern development teams.",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 # Register Routers
