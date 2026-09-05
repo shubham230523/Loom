@@ -30,3 +30,21 @@ async def search_repositories(
     )
 
     return results
+
+@router.get("/{repository_id}")
+async def get_repository_details(
+    repository_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Retrieves detailed information for a specific repository.
+    """
+    client = await github_service.get_client_for_user(db, current_user)
+
+    repository = await github_service.get_repository(
+        client=client,
+        repo_id=repository_id
+    )
+
+    return repository

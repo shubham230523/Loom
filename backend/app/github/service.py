@@ -76,4 +76,14 @@ class GitHubService:
 
         return await client.get("/search/repositories", params=params)
 
+    async def get_repository(
+        self,
+        client: GitHubClient,
+        repo_id: int
+    ) -> Dict[str, Any]:
+        """
+        Retrieves detailed information for a specific repository by its GitHub ID.
+        """
+        return await client.get(f"/repositories/{repo_id}")
+
 github_service = GitHubService()
