@@ -3,6 +3,7 @@ import shutil
 import asyncio
 import uuid
 import re
+import json
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from backend.app.config import settings
@@ -390,5 +391,80 @@ class RepositoryService:
         info["has_lock_file"] = any((path / f).exists() for f in lock_files)
 
         return info
+
+    async def detect_test_system(self, workspace: Workspace, build_info: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Detects the test framework and likely test commands based on the structure and build system.
+        """
+        path = workspace.path
+        test_info = {
+            "frameworks": [],
+            "test_commands": []
+        }
+
+        # 1. Node.js Ecosystem
+        if any(s in build_info["systems"] for s in ["npm", "yarn", "pnpm"]):
+            # Check package.json for test scripts and dependencies
+            package_json_path = path / "package.json"
+            if package_json_path.exists():
+                try:
+                    with open(package_json_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        deps = {**data.get("dependencies", {}), **data.get("devDependencies", {})}
+
+                        # Framework detection
+                        if "jest" in deps or (path / "jest.config.js").exists() or (path / "jest.config.ts").exists():
+                            test_info["frameworks"].append("jest")
+                        if "mocha" in deps:
+                            test_info["frameworks"].append("mocha")
+                        if "vitest" in deps or (path / "vitest.config.ts").exists():
+                            test_info["frameworks"].append("vitest")
+                        if "cypress" in deps:
+                            test_info["frameworks"].append("cypress")
+                        if "playwright" in deps:
+                            test_info["frameworks"].append("playwright")
+
+                        # Command detection
+                        if "scripts" in data and "test" in data["scripts"]:
+                            manager = "npm"
+                            if "yarn" in build_info["systems"]: manager = "yarn"
+                            elif "pnpm" in build_info["systems"]: manager = "pnpm"
+                            test_info["test_commands"].append(f"{manager} test")
+                except Exception:
+                    pass
+
+        # 2. Python Ecosystem
+        if "python" in build_info["systems"]:
+            if (path / "pytest.ini").exists() or (path / "conftest.py").exists() or (path / "tests").exists():
+                test_info["frameworks"].append("pytest")
+                test_info["test_commands"].append("pytest")
+            elif (path / "tox.ini").exists():
+                test_info["frameworks"].append("tox")
+                test_info["test_commands"].append("tox")
+            else:
+                test_info["frameworks"].append("unittest")
+                test_info["test_commands"].append("python -m unittest discover")
+
+        # 3. Java/Kotlin Ecosystem
+        if "gradle" in build_info["systems"]:
+            test_info["frameworks"].append("junit") # Assume JUnit for JVM
+            cmd = "./gradlew test" if build_info["has_wrapper"] else "gradle test"
+            test_info["test_commands"].append(cmd)
+        elif "maven" in build_info["systems"]:
+            test_info["frameworks"].append("junit")
+            cmd = "./mvnw test" if build_info["has_wrapper"] else "mvn test"
+            test_info["test_commands"].append(cmd)
+
+        # 4. Go Ecosystem
+        if "go" in build_info["systems"]:
+            test_info["frameworks"].append("go test")
+            test_info["test_commands"].append("go test ./...")
+
+        # 5. Rust Ecosystem
+        if "rust" in build_info["systems"]:
+            test_info["frameworks"].append("cargo test")
+            test_info["test_commands"].append("cargo test")
+
+        return test_info
 
 repository_service = RepositoryService()
