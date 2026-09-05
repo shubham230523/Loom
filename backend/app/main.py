@@ -1,8 +1,15 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exceptions import RequestValidationError
 from backend.app.config import settings
 from backend.app.utils.logging import setup_logging
 from backend.app.api.middleware import RequestIDMiddleware, LoggingMiddleware
+from backend.app.api.errors import (
+    LoomError,
+    loom_error_handler,
+    validation_error_handler,
+    universal_error_handler
+)
 
 # Initialize structured logging
 setup_logging(service_name=settings.APP_NAME)
@@ -12,6 +19,11 @@ app = FastAPI(
     description="Autonomous collaboration for modern development teams.",
     version="1.0.0",
 )
+
+# Error Handlers
+app.add_exception_handler(LoomError, loom_error_handler)
+app.add_exception_handler(RequestValidationError, validation_error_handler)
+app.add_exception_handler(Exception, universal_error_handler)
 
 # Add Middlewares
 app.add_middleware(RequestIDMiddleware)
