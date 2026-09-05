@@ -1,6 +1,6 @@
 from typing import Optional, List
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
+from pydantic import Field, field_validator
 
 class Settings(BaseSettings):
     # Application Settings
@@ -9,6 +9,10 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     SECRET_KEY: str = "insecure-development-key"
     ALLOWED_HOSTS: List[str] = ["*"]
+
+    # JWT Configuration
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 1 week
 
     # Database Configuration
     DATABASE_URL: str = "postgresql+asyncpg://loom:loom@localhost:5432/loom"
@@ -19,9 +23,21 @@ class Settings(BaseSettings):
     # GitHub Configuration
     GITHUB_CLIENT_ID: Optional[str] = None
     GITHUB_CLIENT_SECRET: Optional[str] = None
+    GITHUB_REDIRECT_URI: Optional[str] = None
     GITHUB_APP_ID: Optional[int] = None
     GITHUB_PRIVATE_KEY: Optional[str] = None
     GITHUB_WEBHOOK_SECRET: Optional[str] = None
+
+    GITHUB_API_URL: str = "https://api.github.com"
+    GITHUB_TOKEN_URL: str = "https://github.com/login/oauth/access_token"
+    GITHUB_AUTHORIZE_URL: str = "https://github.com/login/oauth/authorize"
+
+    @field_validator("GITHUB_CLIENT_SECRET", "GITHUB_PRIVATE_KEY", "GITHUB_WEBHOOK_SECRET")
+    @classmethod
+    def validate_secrets(cls, v: Optional[str]) -> Optional[str]:
+        if v == "":
+            return None
+        return v
 
     # AI Provider Configuration
     AI_PROVIDER: str = "loom-cloud"  # openai, anthropic, loom-cloud

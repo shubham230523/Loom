@@ -4,24 +4,39 @@ import { SymbolView, type SFSymbol } from 'expo-symbols';
 import { ScreenContainer } from '@/components/ui/screen-container';
 import { Text } from '@/components/ui/text';
 import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { useTheme } from '@/hooks/use-theme';
 import { cn } from '@/utils/cn';
+import { AuthService } from '@/services/auth.service';
+import { useAuthStore } from '@/store/auth-store';
 
 export default function SettingsScreen() {
   const theme = useTheme();
+  const { user } = useAuthStore();
+
+  const handleLogout = () => {
+    AuthService.logout();
+  };
 
   return (
     <ScreenContainer scrollable className="py-6">
       <Stack.Screen options={{ title: 'Settings', headerTitleAlign: 'center' }} />
 
       <View className="gap-6">
-        {/* GitHub Section */}
-        <SettingsSection title="Connections">
+        {/* Account Section */}
+        <SettingsSection title="Account">
+          <SettingsItem
+            icon="person.fill"
+            label="Profile"
+            value={user?.username}
+            theme={theme}
+          />
           <SettingsItem
             icon="link"
             label="GitHub"
-            value="Not Connected"
+            value={user?.github_user_id ? "Connected" : "Not Connected"}
             theme={theme}
+            isLast
           />
         </SettingsSection>
 
@@ -32,6 +47,7 @@ export default function SettingsScreen() {
             label="AI Providers"
             value="Default (Loom Cloud)"
             theme={theme}
+            isLast
           />
         </SettingsSection>
 
@@ -41,6 +57,7 @@ export default function SettingsScreen() {
             icon="wrench.and.screwdriver.fill"
             label="Contribution Preferences"
             theme={theme}
+            isLast
           />
         </SettingsSection>
 
@@ -60,8 +77,17 @@ export default function SettingsScreen() {
             icon="chart.bar.fill"
             label="Usage"
             theme={theme}
+            isLast
           />
         </SettingsSection>
+
+        <View className="mt-4">
+          <Button
+            variant="destructive"
+            label="Log Out"
+            onPress={handleLogout}
+          />
+        </View>
 
         <View className="mt-8 mb-12 items-center">
           <Text variant="small" className="text-muted-foreground">Loom Version 1.0.0-alpha</Text>

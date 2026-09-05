@@ -6,19 +6,25 @@ import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { AuthService } from '@/services/auth.service';
+import { useAuthStore } from '@/store/auth-store';
+import { LoadingState } from '@/components/ui/loading-state';
 
 export default function WelcomeScreen() {
   const router = useRouter();
+  const { isLoading, error } = useAuthStore();
 
-  const handleGitHubSignIn = () => {
-    // Auth logic will go here
-    console.log('GitHub Sign In requested');
-    router.replace('/(tabs)/home');
+  const handleGitHubSignIn = async () => {
+    await AuthService.startGitHubLogin();
   };
 
   const handleSkip = () => {
     router.replace('/(tabs)/home');
   };
+
+  if (isLoading) {
+    return <LoadingState message="Connecting to Loom..." />;
+  }
 
   return (
     <ScreenContainer scrollable className="py-12">
@@ -67,6 +73,12 @@ export default function WelcomeScreen() {
       </View>
 
       <View className="gap-4">
+        {error && (
+          <Text className="text-destructive text-center mb-2 font-medium">
+            {error}
+          </Text>
+        )}
+
         <Button
           variant="default"
           onPress={handleGitHubSignIn}

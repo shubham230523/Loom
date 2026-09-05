@@ -1,5 +1,6 @@
 import axios, { AxiosError, AxiosInstance, InternalAxiosRequestConfig } from 'axios';
 import { ApiError, ApiErrorResponse } from '@/types/api';
+import { useAuthStore } from '@/store/auth-store';
 
 const DEFAULT_TIMEOUT = 15000; // 15 seconds
 
@@ -18,8 +19,11 @@ const apiClient: AxiosInstance = axios.create({
 
 // Request Interceptor
 apiClient.interceptors.request.use(
-  (config: InternalAxiosRequestConfig) => {
-    // Add logic like auth tokens here in the future
+  async (config: InternalAxiosRequestConfig) => {
+    const token = await useAuthStore.getState().getToken();
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
     return config;
   },
   (error) => {

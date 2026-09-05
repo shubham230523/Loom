@@ -36,6 +36,15 @@ class AuthorizationError(LoomError):
             code="AUTHORIZATION_FAILED"
         )
 
+class RateLimitError(LoomError):
+    def __init__(self, message: str = "Rate limit exceeded", details: Optional[Any] = None):
+        super().__init__(
+            message=message,
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            code="RATE_LIMIT_EXCEEDED",
+            details=details
+        )
+
 async def loom_error_handler(request: Request, exc: LoomError) -> JSONResponse:
     return JSONResponse(
         status_code=exc.status_code,
