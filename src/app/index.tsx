@@ -1,33 +1,19 @@
 import { useEffect } from 'react';
 import { useRouter } from 'expo-router';
-import { ThemedView } from '@/components/themed-view';
-import { ThemedText } from '@/components/themed-text';
-import { StyleSheet } from 'react-native';
+import { View } from 'react-native';
 
-export default function Splash() {
+/**
+ * SplashRedirect handles the initial application entry.
+ * The visual splash experience is managed by AnimatedSplashOverlay in the root _layout.tsx.
+ */
+export default function SplashRedirect() {
   const router = useRouter();
 
   useEffect(() => {
-    async function prepare() {
-      // Simulate some loading or check auth
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      router.replace('/welcome');
-    }
-    prepare();
+    // Immediate redirect to the welcome screen.
+    // The overlay will be on top during this transition.
+    router.replace('/welcome');
   }, [router]);
 
-  return (
-    <ThemedView style={styles.container}>
-      <ThemedText type="title">LOOM</ThemedText>
-    </ThemedView>
-  );
+  return <View style={{ flex: 1, backgroundColor: '#208AEF' }} />;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#208AEF', // Match splash color from app.json
-  },
-});

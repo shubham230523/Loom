@@ -1,21 +1,24 @@
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { StyleSheet } from 'react-native';
+import { View } from 'react-native';
+import { ScreenContainer } from '@/components/ui/screen-container';
+import { Text } from '@/components/ui/text';
+import { EmptyState } from '@/components/ui/empty-state';
 
 export default function AgentsScreen() {
   return (
-    <ThemedView style={styles.container}>
-      <ThemedText type="subtitle">Running Agents</ThemedText>
-      <ThemedText>Monitor your active autonomous agents.</ThemedText>
-    </ThemedView>
+    <ScreenContainer scrollable className="py-6">
+      <View className="mb-8">
+        <Text variant="title">Running Agents</Text>
+        <Text variant="muted">Monitor and manage your active autonomous agents.</Text>
+      </View>
+
+      <View className="flex-1">
+        <EmptyState
+          title="No agents running"
+          description="Your autonomous agents will appear here when they are active on tasks."
+          icon="cpu"
+          className="min-h-[400px]"
+        />
+      </View>
+    </ScreenContainer>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 20,
-  },
-});
