@@ -2,6 +2,7 @@ import os
 import shutil
 import asyncio
 import uuid
+import re
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from backend.app.config import settings
@@ -162,5 +163,232 @@ class RepositoryService:
                     logger.warning(f"Failed to stat file {rel_file_path}: {str(e)}")
 
         return discovered
+
+    async def extract_readme_info(self, workspace: Workspace) -> Dict[str, Any]:
+        """
+        Attempts to find and parse the README file in the workspace.
+        Extracts sections like description, installation, usage, etc.
+        """
+        readme_path = self._find_readme(workspace.path)
+        if not readme_path:
+            return {
+                "found": False,
+                "sections": {}
+            }
+
+        try:
+            with open(readme_path, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            return {
+                "found": True,
+                "file_name": os.path.basename(readme_path),
+                "sections": self._parse_readme_sections(content)
+            }
+        except Exception as e:
+            logger.error(f"Failed to read README at {readme_path}: {str(e)}")
+            return {"found": False, "error": str(e)}
+
+    def _find_readme(self, base_path: Path) -> Optional[Path]:
+        """Finds the most likely README file in the root directory."""
+        readme_variants = ["README.md", "README.txt", "README", "readme.md", "ReadMe.md"]
+        for variant in readme_variants:
+            path = base_path / variant
+            if path.exists() and path.is_file():
+                return path
+        return None
+
+    def _parse_readme_sections(self, content: str) -> Dict[str, str]:
+        """
+        Simple regex-based parsing of Markdown headers to extract sections.
+        """
+        sections = {
+            "description": "",
+            "installation": "",
+            "usage": "",
+            "architecture": "",
+            "development": ""
+        }
+
+        # Normalize line endings
+        content = content.replace("\r\n", "\n")
+
+        # Basic description: text before the first real header or the first paragraph
+        lines = content.split("\n")
+        desc_lines = []
+        for line in lines:
+            if line.startswith("#"):
+                if desc_lines: break
+                continue
+            if line.strip():
+                desc_lines.append(line.strip())
+            elif desc_lines:
+                break
+        sections["description"] = " ".join(desc_lines)
+
+        # Map headers to our target sections
+        header_mapping = {
+            r"install": "installation",
+            r"setup": "installation",
+            r"getting started": "installation",
+            r"usage": "usage",
+            r"how to use": "usage",
+            r"examples": "usage",
+            r"architecture": "architecture",
+            r"design": "architecture",
+            r"internal": "architecture",
+            r"develop": "development",
+            r"contributing": "development",
+            r"build": "development"
+        }
+
+        current_section = None
+        section_buffers = {k: [] for k in sections.keys()}
+
+        # Split by headers (Markdown style)
+        # Using a simple approach: any line starting with # is a header
+        for line in lines:
+            if line.startswith("#"):
+                header_text = line.lstrip("#").strip().lower()
+                current_section = None
+                for pattern, target in header_mapping.items():
+                    if re.search(pattern, header_text):
+                        current_section = target
+                        break
+            elif current_section:
+                section_buffers[current_section].append(line)
+
+        for key in sections.keys():
+            if key != "description": # description handled above
+                sections[key] = "\n".join(section_buffers[key]).strip()
+
+        return sections
+
+    async def analyze_contribution_rules(self, workspace: Workspace) -> Dict[str, Any]:
+        """
+        Detects and reads files containing contribution rules,
+        including CONTRIBUTING.md and GitHub templates.
+        """
+        rules = {
+            "contributing_guide": None,
+            "issue_templates": [],
+            "pull_request_templates": []
+        }
+
+        # 1. Find and read CONTRIBUTING file
+        for variant in settings.CONTRIBUTING_FILE_VARIANTS:
+            path = workspace.path / variant
+            if path.exists() and path.is_file():
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        rules["contributing_guide"] = {
+                            "file_name": variant,
+                            "content": f.read()
+                        }
+                    break
+                except Exception as e:
+                    logger.warning(f"Failed to read {variant}: {str(e)}")
+
+        # 2. Look for GitHub templates (.github directory)
+        github_path = workspace.path / settings.GITHUB_DIR
+        if github_path.exists() and github_path.is_dir():
+            # Issue templates
+            for it_dir in settings.ISSUE_TEMPLATE_DIRS:
+                it_path = github_path / it_dir
+                if it_path.exists() and it_dir:
+                    for root, _, files in os.walk(it_path):
+                        for file in files:
+                            if file.endswith((".md", ".yml", ".yaml")):
+                                try:
+                                    with open(os.path.join(root, file), "r", encoding="utf-8") as f:
+                                        rules["issue_templates"].append({
+                                            "name": file,
+                                            "content": f.read()
+                                        })
+                                except Exception:
+                                    pass
+
+            # PR templates
+            for variant in settings.PULL_REQUEST_TEMPLATE_VARIANTS:
+                pr_path = github_path / variant
+                if pr_path.exists() and pr_path.is_file():
+                    try:
+                        with open(pr_path, "r", encoding="utf-8") as f:
+                            rules["pull_request_templates"].append({
+                                "name": variant,
+                                "content": f.read()
+                            })
+                    except Exception:
+                        pass
+
+        # Also check root for PR template
+        if not rules["pull_request_templates"]:
+             for variant in settings.PULL_REQUEST_TEMPLATE_VARIANTS:
+                pr_path = workspace.path / variant
+                if pr_path.exists() and pr_path.is_file():
+                    try:
+                        with open(pr_path, "r", encoding="utf-8") as f:
+                            rules["pull_request_templates"].append({
+                                "name": variant,
+                                "content": f.read()
+                            })
+                    except Exception:
+                        pass
+
+        return rules
+
+    async def detect_build_system(self, workspace: Workspace) -> Dict[str, Any]:
+        """
+        Detects the build system and primary language markers of a repository.
+        """
+        path = workspace.path
+        info = {
+            "systems": [],
+            "primary_language": None,
+            "has_lock_file": False,
+            "has_wrapper": False
+        }
+
+        # Build system markers mapping
+        markers = {
+            "npm": ["package.json"],
+            "yarn": ["yarn.lock"],
+            "pnpm": ["pnpm-lock.yaml"],
+            "gradle": ["build.gradle", "build.gradle.kts", "settings.gradle"],
+            "maven": ["pom.xml"],
+            "python": ["requirements.txt", "setup.py", "pyproject.toml", "Pipfile"],
+            "go": ["go.mod"],
+            "rust": ["Cargo.toml"],
+            "make": ["Makefile"],
+            "cmake": ["CMakeLists.txt"]
+        }
+
+        # Detection logic
+        for system, files in markers.items():
+            for file in files:
+                if (path / file).exists():
+                    if system not in info["systems"]:
+                        info["systems"].append(system)
+
+                    # Language inference
+                    if system in ["npm", "yarn", "pnpm"]:
+                        info["primary_language"] = "JavaScript/TypeScript"
+                    elif system in ["gradle", "maven"]:
+                        info["primary_language"] = "Java/Kotlin"
+                    elif system == "python":
+                        info["primary_language"] = "Python"
+                    elif system == "go":
+                        info["primary_language"] = "Go"
+                    elif system == "rust":
+                        info["primary_language"] = "Rust"
+
+        # Check for wrappers
+        info["has_wrapper"] = (path / "gradlew").exists() or (path / "mvnw").exists()
+
+        # Check for lock files
+        lock_files = ["package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock", "Cargo.lock", "go.sum"]
+        info["has_lock_file"] = any((path / f).exists() for f in lock_files)
+
+        return info
 
 repository_service = RepositoryService()
