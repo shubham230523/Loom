@@ -4,121 +4,113 @@ import {
   TabTrigger,
   TabSlot,
   TabTriggerSlotProps,
-  TabListProps,
 } from 'expo-router/ui';
-import { SymbolView } from 'expo-symbols';
-import { Pressable, useColorScheme, View, StyleSheet } from 'react-native';
-
-import { ExternalLink } from './external-link';
-import { ThemedText } from './themed-text';
-import { ThemedView } from './themed-view';
-
-import { Colors, MaxContentWidth, Spacing } from '@/constants/theme';
+import { SymbolView, type SFSymbol } from 'expo-symbols';
+import { Pressable, View } from 'react-native';
+import { Text } from './ui/text';
+import { cn } from '@/utils/cn';
+import { useTheme } from '@/hooks/use-theme';
 
 export default function AppTabs() {
   return (
-    <Tabs>
-      <TabSlot style={{ height: '100%' }} />
-      <TabList asChild>
-        <CustomTabList>
-          <TabTrigger name="home" href="/home" asChild>
-            <TabButton>Home</TabButton>
-          </TabTrigger>
-          <TabTrigger name="discover" href="/discover" asChild>
-            <TabButton>Discover</TabButton>
-          </TabTrigger>
-          <TabTrigger name="contributions" href="/contributions" asChild>
-            <TabButton>Contribs</TabButton>
-          </TabTrigger>
-          <TabTrigger name="activity" href="/activity" asChild>
-            <TabButton>Activity</TabButton>
-          </TabTrigger>
-          <TabTrigger name="profile" href="/profile" asChild>
-            <TabButton>Profile</TabButton>
-          </TabTrigger>
-        </CustomTabList>
+    <Tabs className="flex-col md:flex-row h-screen bg-background">
+      {/* Mobile Header (Hidden on Desktop) */}
+      <View className="md:hidden p-4 border-b border-border flex-row items-center justify-between">
+        <Text variant="subtitle" className="font-bold">Loom</Text>
+      </View>
+
+      {/* Desktop Sidebar */}
+      <TabList className="hidden md:flex w-64 border-r border-border bg-card p-4 flex-col gap-1">
+        <View className="px-2 py-4 mb-4">
+          <Text variant="title" className="text-2xl font-bold text-primary">Loom</Text>
+        </View>
+
+        <SidebarItem name="home" href="/home" icon="house.fill" label="Home" />
+        <SidebarItem name="discover" href="/discover" icon="magnifyingglass" label="Discover" />
+        <SidebarItem name="contributions" href="/contributions" icon="plus.square.fill" label="Contributions" />
+        <SidebarItem name="agents" href="/agents" icon="cpu" label="Running Agents" />
+        <SidebarItem name="pulls" href="/pulls" icon="arrow.triangle.pull" label="Pull Requests" />
+        <SidebarItem name="activity" href="/activity" icon="bell.fill" label="Activity" />
+
+        <View className="mt-auto pt-4 border-t border-border gap-1">
+          <SidebarItem name="profile" href="/profile" icon="person.fill" label="Profile" />
+          <SidebarItem name="settings" href="/settings" icon="gearshape.fill" label="Settings" />
+        </View>
+      </TabList>
+
+      {/* Main Content Area */}
+      <View className="flex-1">
+        <TabSlot />
+      </View>
+
+      {/* Mobile Bottom Bar (Hidden on Desktop) */}
+      <TabList className="md:hidden flex-row border-t border-border bg-card pb-safe">
+        <MobileTabTrigger name="home" href="/home" icon="house.fill" />
+        <MobileTabTrigger name="discover" href="/discover" icon="magnifyingglass" />
+        <MobileTabTrigger name="contributions" href="/contributions" icon="plus.square.fill" />
+        <MobileTabTrigger name="activity" href="/activity" icon="bell.fill" />
+        <MobileTabTrigger name="profile" href="/profile" icon="person.fill" />
       </TabList>
     </Tabs>
   );
 }
 
-export function TabButton({ children, isFocused, ...props }: TabTriggerSlotProps) {
+function SidebarItem({ name, href, icon, label }: { name: string; href: string; icon: SFSymbol; label: string }) {
+  const theme = useTheme();
+
   return (
-    <Pressable {...props} style={({ pressed }) => pressed && styles.pressed}>
-      <ThemedView
-        type={isFocused ? 'backgroundSelected' : 'backgroundElement'}
-        style={styles.tabButtonView}>
-        <ThemedText type="small" themeColor={isFocused ? 'text' : 'textSecondary'}>
-          {children}
-        </ThemedText>
-      </ThemedView>
+    <TabTrigger name={name} href={href} asChild>
+      <SidebarButton icon={icon} label={label} theme={theme} />
+    </TabTrigger>
+  );
+}
+
+function SidebarButton({ icon, label, isFocused, theme, ...props }: TabTriggerSlotProps & { icon: SFSymbol; label: string; theme: any }) {
+  return (
+    <Pressable
+      {...props}
+      className={cn(
+        "flex-row items-center gap-3 px-3 py-2.5 rounded-lg transition-colors",
+        isFocused ? "bg-primary/10" : "hover:bg-muted active:bg-muted"
+      )}
+    >
+      <SymbolView
+        name={icon}
+        size={20}
+        tintColor={isFocused ? theme.primary : theme.textSecondary}
+      />
+      <Text
+        className={cn(
+          "font-medium",
+          isFocused ? "text-primary" : "text-muted-foreground"
+        )}
+      >
+        {label}
+      </Text>
     </Pressable>
   );
 }
 
-export function CustomTabList(props: TabListProps) {
-  const scheme = useColorScheme();
-  const colors = Colors[scheme === 'unspecified' ? 'light' : scheme];
-
+function MobileTabTrigger({ name, href, icon }: { name: string; href: string; icon: SFSymbol }) {
+  const theme = useTheme();
   return (
-    <View {...props} style={styles.tabListContainer}>
-      <ThemedView type="backgroundElement" style={styles.innerContainer}>
-        <ThemedText type="smallBold" style={styles.brandText}>
-          Loom
-        </ThemedText>
-
-        {props.children}
-
-        <ExternalLink href="https://docs.expo.dev" asChild>
-          <Pressable style={styles.externalPressable}>
-            <ThemedText type="link">Docs</ThemedText>
-            <SymbolView
-              tintColor={colors.text}
-              name={{ ios: 'arrow.up.right.square', web: 'link' }}
-              size={12}
-            />
-          </Pressable>
-        </ExternalLink>
-      </ThemedView>
-    </View>
+    <TabTrigger name={name} href={href} asChild className="flex-1">
+      <TabTriggerButton icon={icon} theme={theme} />
+    </TabTrigger>
   );
 }
 
-const styles = StyleSheet.create({
-  tabListContainer: {
-    position: 'absolute',
-    width: '100%',
-    padding: Spacing.three,
-    justifyContent: 'center',
-    alignItems: 'center',
-    flexDirection: 'row',
-  },
-  innerContainer: {
-    paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.five,
-    borderRadius: Spacing.five,
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexGrow: 1,
-    gap: Spacing.two,
-    maxWidth: MaxContentWidth,
-  },
-  brandText: {
-    marginRight: 'auto',
-  },
-  pressed: {
-    opacity: 0.7,
-  },
-  tabButtonView: {
-    paddingVertical: Spacing.one,
-    paddingHorizontal: Spacing.three,
-    borderRadius: Spacing.three,
-  },
-  externalPressable: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: Spacing.one,
-    marginLeft: Spacing.three,
-  },
-});
+function TabTriggerButton({ icon, isFocused, theme, ...props }: TabTriggerSlotProps & { icon: SFSymbol; theme: any }) {
+  return (
+    <Pressable
+      {...props}
+      className="items-center justify-center py-3"
+    >
+      <SymbolView
+        name={icon}
+        size={24}
+        tintColor={isFocused ? theme.primary : theme.textSecondary}
+      />
+    </Pressable>
+  );
+}
