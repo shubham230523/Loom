@@ -49,6 +49,11 @@ pip-delete-this-directory.txt
 .build
 .active_venv
 
+# Loom Workspaces
+loom-workspaces/
+test_workspaces/
+tmp/
+
 # typescript
 *.tsbuildinfo
 

@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     DEFAULT_MODEL: str = "gpt-4o"
     AGENT_MODEL: str = "gpt-4o-mini"
 
+    # Workspace & Cloning Settings
+    WORKSPACE_BASE_DIR: str = "/tmp/loom-workspaces"
+    MAX_REPO_SIZE_MB: int = 500
+    CLONE_TIMEOUT_SECONDS: int = 300  # 5 minutes
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
