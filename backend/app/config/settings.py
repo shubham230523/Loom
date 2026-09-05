@@ -54,6 +54,11 @@ class Settings(BaseSettings):
     MAX_REPO_SIZE_MB: int = 500
     CLONE_TIMEOUT_SECONDS: int = 300  # 5 minutes
 
+    # File Discovery Settings
+    MAX_FILE_SIZE_KB: int = 1024  # 1MB
+    IGNORED_DIRECTORIES: List[str] = [".git", "node_modules", "venv", ".venv", "__pycache__", "dist", "build"]
+    IGNORED_FILES: List[str] = [".DS_Store", "package-lock.json", "yarn.lock", "pnpm-lock.yaml"]
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
