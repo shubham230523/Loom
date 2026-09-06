@@ -1,4 +1,5 @@
 import re
+import json
 from typing import List, Dict, Any, Optional
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +11,7 @@ from backend.app.agents.solution_planner import solution_planner_agent
 from backend.app.agents.implementation import implementation_agent
 from backend.app.agents.debugger import debugger_agent
 from backend.app.agents.code_reviewer import code_reviewer_agent
+from backend.app.security.secret_scanner import secret_scanner
 from backend.app.utils.logging import logger
 from backend.app.api.errors import LoomError
 
@@ -217,7 +219,7 @@ class ContributionService:
         client: GitHubClient
     ) -> Dict[str, Any]:
         """
-        Triggers the autonomous implementation of an approved plan.
+        Triggers the autonomous implementation cycle (Implement -> Test -> Review loop).
         """
         # 1. Fetch context
         query = (
@@ -246,53 +248,53 @@ class ContributionService:
         if not workspace.path.exists():
             workspace = await self.setup_contribution_workspace(db, contribution_id, client)
 
-        # 3. Detect test command
+        # 3. Detect technical context
         build_info = await repository_service.detect_build_system(workspace)
         test_info = await repository_service.detect_test_system(workspace, build_info)
         test_command = test_info["test_commands"][0] if test_info["test_commands"] else None
 
-        # 4. Debugging Loop
-        retries = 0
-        max_retries = settings.MAX_DEBUG_RETRIES
-        debugging_context = None
-        final_result = None
+        # 4. Review-Fix Loop
+        review_cycles = 0
+        max_cycles = settings.MAX_REVIEW_CYCLES
+        review_feedback = None
+        final_impl_result = None
 
-        while retries <= max_retries:
-            logger.info(f"Implementation Loop: Attempt {retries + 1}/{max_retries + 1}")
+        while review_cycles <= max_cycles:
+            logger.info(f"Review Cycle: Attempt {review_cycles + 1}/{max_cycles + 1}")
 
-            # Run Implementation
-            final_result = await implementation_agent.implement_solution(
-                db=db,
-                repository=repo,
-                plan=plan,
-                contribution=contribution,
-                workspace_path=workspace.path,
-                test_command=test_command,
-                debugging_context=debugging_context
-            )
+            # --- PHASE A: IMPLEMENTATION & DEBUGGING LOOP ---
+            retries = 0
+            max_retries = settings.MAX_DEBUG_RETRIES
+            debugging_context = None
 
-            if final_result.success:
-                logger.info(f"Implementation Loop: Success on attempt {retries + 1}")
-                break
+            while retries <= max_retries:
+                logger.info(f"Implementation Loop: Attempt {retries + 1}/{max_retries + 1}")
 
-            # If failed and no test command, we can't really debug automatically
-            if not test_command:
-                logger.warning("Implementation failed but no test command available for debugging.")
-                break
+                final_impl_result = await implementation_agent.implement_solution(
+                    db=db,
+                    repository=repo,
+                    plan=plan,
+                    contribution=contribution,
+                    workspace_path=workspace.path,
+                    test_command=test_command,
+                    debugging_context=debugging_context,
+                    review_feedback=review_feedback
+                )
 
-            # If failed, analyze and retry
-            if retries < max_retries:
-                logger.info("Implementation failed, triggering DebuggerAgent...")
-                # Fetch the failed test run record
-                query = select(TestRun).where(TestRun.id == final_result.test_run_id)
+                if final_impl_result.success:
+                    break
+
+                if not test_command or retries >= max_retries:
+                    break
+
+                # Analyze failure and retry
+                query = select(TestRun).where(TestRun.id == final_impl_result.test_run_id)
                 res = await db.execute(query)
                 test_run = res.scalar_one_or_none()
 
                 if test_run:
-                    # Provide code context (simplified for now: first file content)
                     code_context = ""
                     try:
-                        # Get content of files mentioned in plan for context
                         for f in plan.relevant_files[:2]:
                             with open(workspace.path / f, "r") as src:
                                 code_context += f"File {f}:\n{src.read()[-2000:]}\n\n"
@@ -306,27 +308,54 @@ class ContributionService:
                     debugging_context = f"FAILURE ANALYSIS: {analysis.root_cause_analysis}\nSUGGESTED FIX: {analysis.suggested_fix}"
 
                 retries += 1
-            else:
-                logger.error("Maximum debugging retries reached. Contribution failed.")
+
+            # --- PHASE B: CODE REVIEW ---
+            if not final_impl_result.success:
+                logger.error("Implementation phase failed. Skipping review.")
                 break
 
-        # 5. Generate and store diff summary
-        try:
+            # Generate diff for reviewer
             diff_info = await repository_service.get_contribution_diff(workspace)
             contribution.diff_summary = diff_info
-
-            # Update overall contribution status
-            if final_result.success:
-                contribution.status = "in_progress" # Waiting for user review
-            else:
-                contribution.status = "failed"
-
             await db.commit()
-            logger.info(f"Diff generated and stored for contribution {contribution_id}")
-        except Exception as e:
-            logger.warning(f"Failed to generate diff for contribution {contribution_id}: {str(e)}")
 
-        return final_result.model_dump()
+            # Execute Review
+            logger.info("Triggering autonomous code review...")
+            review_record = await self.run_code_review(db, contribution_id)
+
+            if review_record.decision == "APPROVE":
+                logger.info("Autonomous code review approved.")
+
+                # --- PHASE C: SECRET SCANNING ---
+                findings = secret_scanner.scan_text(contribution.diff_summary["diff"])
+                if findings:
+                    logger.error(f"SECURITY ALERT: Potential secrets detected in diff for {contribution_id}!")
+                    contribution.status = "failed"
+                    # We store the finding info in the diff summary or separate field
+                    contribution.diff_summary["security_findings"] = findings
+                    await db.commit()
+                    return {
+                        "success": False,
+                        "summary": "Implementation blocked due to potential secrets detected in changes.",
+                        "findings": findings
+                    }
+
+                contribution.status = "in_progress" # Ready for final human check / PR creation
+                await db.commit()
+                return final_impl_result.model_dump()
+
+            if review_cycles < max_cycles:
+                logger.info(f"Review requested changes: {review_record.summary}")
+                review_feedback = f"REVIEW FINDINGS: {review_record.summary}\nISSUES TO FIX: {json.dumps(review_record.review_issues, indent=2)}"
+                review_cycles += 1
+            else:
+                logger.error("Maximum review cycles reached.")
+                break
+
+        # Final state update if loop finished without approval
+        contribution.status = "failed"
+        await db.commit()
+        return final_impl_result.model_dump() if final_impl_result else {"success": False, "summary": "Workflow aborted"}
 
     async def run_code_review(
         self,

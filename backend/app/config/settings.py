@@ -58,6 +58,16 @@ class Settings(BaseSettings):
 
     # Debugging Loop Settings
     MAX_DEBUG_RETRIES: int = 3
+    MAX_REVIEW_CYCLES: int = 3
+
+    # Security Scanning Settings
+    SECRET_DETECTION_PATTERNS: List[str] = [
+        r"(?i)api_key", r"(?i)client_secret", r"(?i)password",
+        r"sk-[a-zA-Z0-9]{48}", # OpenAI
+        r"AKIA[0-9A-Z]{16}", # AWS Access Key
+        r"ghp_[a-zA-Z0-9]{36}", # GitHub PAT
+        r"-----BEGIN [A-Z ]+ PRIVATE KEY-----" # Generic Private Key
+    ]
 
     # Task-Specific Models (Overrides)
     MODEL_REPO_ANALYSIS: Optional[str] = None

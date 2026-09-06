@@ -28,17 +28,16 @@ class ImplementationAgent:
         contribution: Contribution,
         workspace_path: Path,
         test_command: Optional[str] = None,
-        debugging_context: Optional[str] = None
+        debugging_context: Optional[str] = None,
+        review_feedback: Optional[str] = None
     ) -> ImplementationResult:
         """
         Executes an approved solution plan by modifying code and verifying it via TestAgent in a sandbox.
-        Supports passing debugging_context for fixes during retry loops.
+        Supports passing debugging_context for fixes during retry loops and review_feedback for refinement.
         """
         logger.info(f"ImplementationAgent: Starting implementation for plan {plan.id}")
 
         modified_files = []
-
-        # Determine files to modify: either from plan or specifically from debugging analysis
         files_to_scan = plan.relevant_files
 
         # 1. Iterate through files mentioned in the plan
@@ -59,6 +58,7 @@ class ImplementationAgent:
             steps_text = "\n".join([f"- {s}" for s in plan.implementation_steps])
 
             debug_instruction = f"\nPREVIOUS FAILURE CONTEXT:\n{debugging_context}" if debugging_context else ""
+            review_instruction = f"\nCODE REVIEW FEEDBACK:\n{review_feedback}" if review_feedback else ""
 
             prompt = f"""
             You are a senior software engineer implementing a planned technical change.
@@ -67,6 +67,7 @@ class ImplementationAgent:
             IMPLEMENTATION STEPS:
             {steps_text}
             {debug_instruction}
+            {review_instruction}
 
             FILE TO MODIFY: {rel_path}
             CURRENT CONTENT:
@@ -75,7 +76,7 @@ class ImplementationAgent:
             ```
 
             Apply the necessary changes to this file.
-            If debugging context is provided, focus on fixing the reported test failures.
+            If debugging context or review feedback is provided, focus on addressing the reported issues.
             Maintain the existing coding style and conventions.
             Return the COMPLETE new content for the file.
             """
