@@ -3,6 +3,10 @@ from .conflict_detector import conflict_detector_agent, ConflictAssessment
 from .opportunity_generator import opportunity_generator_agent, OpportunityProposal
 from .scoring_agent import scoring_agent, OpportunityScoreCard
 from .solution_planner import solution_planner_agent, SolutionPlanOutput
+from .implementation import implementation_agent, ImplementationResult
+from .test_agent import test_agent
+from .debugger import debugger_agent, DebuggingAnalysis
+from .code_reviewer import code_reviewer_agent, CodeReviewResult
 
 __all__ = [
     "issue_analyzer_agent",
@@ -14,5 +18,12 @@ __all__ = [
     "scoring_agent",
     "OpportunityScoreCard",
     "solution_planner_agent",
-    "SolutionPlanOutput"
+    "SolutionPlanOutput",
+    "implementation_agent",
+    "ImplementationResult",
+    "test_agent",
+    "debugger_agent",
+    "DebuggingAnalysis",
+    "code_reviewer_agent",
+    "CodeReviewResult"
 ]

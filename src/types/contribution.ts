@@ -8,6 +8,13 @@ export interface Contribution {
   created_at: string;
   updated_at: string;
   solution_plan?: SolutionPlan;
+  diff_summary?: {
+    diff: string;
+    stats: string;
+    files: string[];
+    additions: number;
+    deletions: number;
+  };
 }
 
 export interface SolutionPlan {

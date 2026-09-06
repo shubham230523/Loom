@@ -211,6 +211,28 @@ async def create_contribution(
         opportunity_id=opportunity_id
     )
 
+@router.get("/{repository_id}/contributions/{contribution_id}")
+async def get_contribution_details(
+    repository_id: UUID,
+    contribution_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Retrieves detailed information for a specific contribution.
+    """
+    query = select(Contribution).where(
+        Contribution.id == contribution_id,
+        Contribution.repository_id == repository_id
+    )
+    result = await db.execute(query)
+    contribution = result.scalar_one_or_none()
+
+    if not contribution:
+        return {"error": "Contribution not found"}
+
+    return contribution
+
 @router.post("/{repository_id}/contributions/{contribution_id}/plan")
 async def generate_contribution_plan(
     repository_id: UUID,
@@ -254,6 +276,31 @@ async def setup_contribution_workspace(
         "workspace_id": workspace.id,
         "path": str(workspace.path)
     }
+
+@router.post("/{repository_id}/contributions/{contribution_id}/implement")
+async def execute_contribution_implementation(
+    repository_id: UUID,
+    contribution_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Triggers the autonomous implementation of an approved plan.
+    """
+    client = await github_service.get_client_for_user(db, current_user)
+    return await contribution_service.execute_implementation(db, contribution_id, client)
+
+@router.post("/{repository_id}/contributions/{contribution_id}/review")
+async def run_contribution_review(
+    repository_id: UUID,
+    contribution_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Triggers an autonomous technical review of the implementation.
+    """
+    return await contribution_service.run_code_review(db, contribution_id)
 
 @router.get("/{repository_id}/opportunities/{opportunity_id}")
 async def get_opportunity_details(
@@ -569,6 +616,28 @@ async def create_contribution(
         opportunity_id=opportunity_id
     )
 
+@router.get("/{repository_id}/contributions/{contribution_id}")
+async def get_contribution_details(
+    repository_id: UUID,
+    contribution_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Retrieves detailed information for a specific contribution.
+    """
+    query = select(Contribution).where(
+        Contribution.id == contribution_id,
+        Contribution.repository_id == repository_id
+    )
+    result = await db.execute(query)
+    contribution = result.scalar_one_or_none()
+
+    if not contribution:
+        return {"error": "Contribution not found"}
+
+    return contribution
+
 @router.post("/{repository_id}/contributions/{contribution_id}/plan")
 async def generate_contribution_plan(
     repository_id: UUID,
@@ -612,6 +681,31 @@ async def setup_contribution_workspace(
         "workspace_id": workspace.id,
         "path": str(workspace.path)
     }
+
+@router.post("/{repository_id}/contributions/{contribution_id}/implement")
+async def execute_contribution_implementation(
+    repository_id: UUID,
+    contribution_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Triggers the autonomous implementation of an approved plan.
+    """
+    client = await github_service.get_client_for_user(db, current_user)
+    return await contribution_service.execute_implementation(db, contribution_id, client)
+
+@router.post("/{repository_id}/contributions/{contribution_id}/review")
+async def run_contribution_review(
+    repository_id: UUID,
+    contribution_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Triggers an autonomous technical review of the implementation.
+    """
+    return await contribution_service.run_code_review(db, contribution_id)
 
 @router.get("/{repository_id}/opportunities/{opportunity_id}")
 async def get_opportunity_details(

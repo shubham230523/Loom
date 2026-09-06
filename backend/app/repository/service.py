@@ -162,6 +162,82 @@ class RepositoryService:
                 raise LoomError(f"Branch creation failed: {str(e)}", status_code=500)
             raise
 
+    async def get_contribution_diff(self, workspace: Workspace) -> Dict[str, Any]:
+        """
+        Generates a git diff for the changes in the workspace.
+        """
+        try:
+            # First, stage all changes so we can see them in diff
+            # In a real app we might want more granular control
+            subprocess_cmd = ["git", "add", "."]
+            process = await asyncio.create_subprocess_exec(
+                *subprocess_cmd,
+                cwd=str(workspace.path),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            await process.communicate()
+
+            # 1. Get the diff content (staged changes)
+            cmd = ["git", "diff", "--staged"]
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                cwd=str(workspace.path),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await process.communicate()
+
+            if process.returncode != 0:
+                raise LoomError(f"Git diff failed: {stderr.decode()}")
+
+            diff_content = stdout.decode("utf-8", errors="replace")
+
+            # 2. Get short stats
+            cmd = ["git", "diff", "--staged", "--shortstat"]
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                cwd=str(workspace.path),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await process.communicate()
+
+            stats_text = stdout.decode().strip()
+
+            # 3. Get list of changed files
+            cmd = ["git", "diff", "--staged", "--name-only"]
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                cwd=str(workspace.path),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await process.communicate()
+            files = stdout.decode().strip().split("\n")
+            files = [f for f in files if f]
+
+            # Parse stats
+            additions = 0
+            deletions = 0
+            if stats_text:
+                add_match = re.search(r"(\d+) insertion", stats_text)
+                del_match = re.search(r"(\d+) deletion", stats_text)
+                additions = int(add_match.group(1)) if add_match else 0
+                deletions = int(del_match.group(1)) if del_match else 0
+
+            return {
+                "diff": diff_content,
+                "stats": stats_text,
+                "files": files,
+                "additions": additions,
+                "deletions": deletions
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to generate diff: {str(e)}")
+            raise LoomError(f"Diff generation failed: {str(e)}", status_code=500)
+
     async def discover_files(self, workspace: Workspace) -> List[Dict[str, Any]]:
         """
         Walks through the workspace and discovers files and directories.

@@ -20,4 +20,14 @@ export class ContributionService {
     });
     return data;
   }
+
+  static async setupWorkspace(repositoryId: string, contributionId: string): Promise<{ workspace_id: string, path: string }> {
+    const { data } = await apiClient.post<{ workspace_id: string, path: string }>(`/api/v1/repositories/${repositoryId}/contributions/${contributionId}/workspace`);
+    return data;
+  }
+
+  static async executeImplementation(repositoryId: string, contributionId: string): Promise<any> {
+    const { data } = await apiClient.post<any>(`/api/v1/repositories/${repositoryId}/contributions/${contributionId}/implement`);
+    return data;
+  }
 }

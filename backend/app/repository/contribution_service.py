@@ -3,10 +3,13 @@ from typing import List, Dict, Any, Optional
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from backend.app.database import Repository, RepositoryIndex, Opportunity, Issue, Contribution, SolutionPlan
+from backend.app.database import Repository, RepositoryIndex, Opportunity, Issue, Contribution, SolutionPlan, TestRun, CodeReview
 from backend.app.repository.service import repository_service, Workspace
 from backend.app.github.service import github_service, GitHubClient
 from backend.app.agents.solution_planner import solution_planner_agent
+from backend.app.agents.implementation import implementation_agent
+from backend.app.agents.debugger import debugger_agent
+from backend.app.agents.code_reviewer import code_reviewer_agent
 from backend.app.utils.logging import logger
 from backend.app.api.errors import LoomError
 
@@ -206,6 +209,184 @@ class ContributionService:
         except Exception as e:
             await workspace.cleanup()
             raise e
+
+    async def execute_implementation(
+        self,
+        db: AsyncSession,
+        contribution_id: UUID,
+        client: GitHubClient
+    ) -> Dict[str, Any]:
+        """
+        Triggers the autonomous implementation of an approved plan.
+        """
+        # 1. Fetch context
+        query = (
+            select(Contribution, Opportunity, Repository, SolutionPlan)
+            .join(Opportunity, Contribution.opportunity_id == Opportunity.id)
+            .join(Repository, Contribution.repository_id == Repository.id)
+            .join(SolutionPlan, Contribution.id == SolutionPlan.contribution_id)
+            .where(Contribution.id == contribution_id)
+        )
+        result = await db.execute(query)
+        row = result.first()
+
+        if not row:
+            raise LoomError("Contribution, Opportunity, or approved Plan not found", status_code=404)
+
+        contribution, opportunity, repo, plan = row
+
+        if plan.status != "approved":
+            raise LoomError("Solution plan must be approved before execution", status_code=400)
+
+        if not contribution.workspace_id:
+             raise LoomError("Contribution workspace must be setup before execution", status_code=400)
+
+        # 2. Re-instantiate workspace
+        workspace = Workspace(workspace_id=contribution.workspace_id)
+        if not workspace.path.exists():
+            workspace = await self.setup_contribution_workspace(db, contribution_id, client)
+
+        # 3. Detect test command
+        build_info = await repository_service.detect_build_system(workspace)
+        test_info = await repository_service.detect_test_system(workspace, build_info)
+        test_command = test_info["test_commands"][0] if test_info["test_commands"] else None
+
+        # 4. Debugging Loop
+        retries = 0
+        max_retries = settings.MAX_DEBUG_RETRIES
+        debugging_context = None
+        final_result = None
+
+        while retries <= max_retries:
+            logger.info(f"Implementation Loop: Attempt {retries + 1}/{max_retries + 1}")
+
+            # Run Implementation
+            final_result = await implementation_agent.implement_solution(
+                db=db,
+                repository=repo,
+                plan=plan,
+                contribution=contribution,
+                workspace_path=workspace.path,
+                test_command=test_command,
+                debugging_context=debugging_context
+            )
+
+            if final_result.success:
+                logger.info(f"Implementation Loop: Success on attempt {retries + 1}")
+                break
+
+            # If failed and no test command, we can't really debug automatically
+            if not test_command:
+                logger.warning("Implementation failed but no test command available for debugging.")
+                break
+
+            # If failed, analyze and retry
+            if retries < max_retries:
+                logger.info("Implementation failed, triggering DebuggerAgent...")
+                # Fetch the failed test run record
+                query = select(TestRun).where(TestRun.id == final_result.test_run_id)
+                res = await db.execute(query)
+                test_run = res.scalar_one_or_none()
+
+                if test_run:
+                    # Provide code context (simplified for now: first file content)
+                    code_context = ""
+                    try:
+                        # Get content of files mentioned in plan for context
+                        for f in plan.relevant_files[:2]:
+                            with open(workspace.path / f, "r") as src:
+                                code_context += f"File {f}:\n{src.read()[-2000:]}\n\n"
+                    except Exception: pass
+
+                    analysis = await debugger_agent.analyze_failure(
+                        test_run=test_run,
+                        plan_context=plan.problem,
+                        code_context=code_context
+                    )
+                    debugging_context = f"FAILURE ANALYSIS: {analysis.root_cause_analysis}\nSUGGESTED FIX: {analysis.suggested_fix}"
+
+                retries += 1
+            else:
+                logger.error("Maximum debugging retries reached. Contribution failed.")
+                break
+
+        # 5. Generate and store diff summary
+        try:
+            diff_info = await repository_service.get_contribution_diff(workspace)
+            contribution.diff_summary = diff_info
+
+            # Update overall contribution status
+            if final_result.success:
+                contribution.status = "in_progress" # Waiting for user review
+            else:
+                contribution.status = "failed"
+
+            await db.commit()
+            logger.info(f"Diff generated and stored for contribution {contribution_id}")
+        except Exception as e:
+            logger.warning(f"Failed to generate diff for contribution {contribution_id}: {str(e)}")
+
+        return final_result.model_dump()
+
+    async def run_code_review(
+        self,
+        db: AsyncSession,
+        contribution_id: UUID
+    ) -> CodeReview:
+        """
+        Orchestrates an autonomous code review for a contribution.
+        """
+        # 1. Fetch full context
+        query = (
+            select(Contribution, SolutionPlan)
+            .join(SolutionPlan, Contribution.id == SolutionPlan.contribution_id)
+            .where(Contribution.id == contribution_id)
+        )
+        result = await db.execute(query)
+        row = result.first()
+
+        if not row:
+            raise LoomError("Contribution or approved plan not found", status_code=404)
+
+        contribution, plan = row
+
+        if not contribution.diff_summary:
+            raise LoomError("Contribution must have a diff before review", status_code=400)
+
+        # 2. Get latest test run
+        query = (
+            select(TestRun)
+            .where(TestRun.contribution_id == contribution_id)
+            .order_by(TestRun.timestamp.desc())
+        )
+        res = await db.execute(query)
+        test_run = res.scalar_one_or_none()
+
+        # 3. Execute Review Agent
+        review_result = await code_reviewer_agent.review_changes(
+            plan=plan,
+            diff=contribution.diff_summary["diff"],
+            test_run=test_run
+        )
+
+        # 4. Persist Review
+        review = CodeReview(
+            contribution_id=contribution_id,
+            decision=review_result.decision.value,
+            summary=review_result.summary,
+            review_issues=[issue.model_dump() for issue in review_result.issues],
+            confidence=review_result.confidence
+        )
+        db.add(review)
+
+        # If rejected, we might want to update contribution status
+        # but for now we just store the review.
+
+        await db.commit()
+        await db.refresh(review)
+
+        logger.info(f"Autonomous review completed for {contribution_id}: {review.decision}")
+        return review
 
     async def approve_plan(
         self,

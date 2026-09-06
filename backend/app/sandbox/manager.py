@@ -134,4 +134,45 @@ class SandboxManager:
         stream.seek(0)
         return stream
 
+    def _extract_tar_stream(self, tar_data: bytes, target_path: Path):
+        stream = io.BytesIO(tar_data)
+        with tarfile.open(fileobj=stream, mode='r') as tar:
+            tar.extractall(path=target_path)
+
+    async def get_workspace_files(self, container_id: str, target_path: Path):
+        """
+        Retrieves the entire workspace directory from a container and extracts it.
+        """
+        if not self.client: return
+
+        container = self.client.containers.get(container_id)
+        # get_archive returns a tuple (stream, stat)
+        bits, stat = container.get_archive("/workspace")
+
+        # Collect all bits into a single byte string
+        tar_data = b"".join(bits)
+
+        # Extract to target path
+        # Note: get_archive for /workspace includes the 'workspace/' prefix in the tar
+        # so we extract to the parent of target_path or handle the prefix
+        import shutil
+        temp_extract = target_path.parent / f"extract_{container_id}"
+        os.makedirs(temp_extract, exist_ok=True)
+
+        self._extract_tar_stream(tar_data, temp_extract)
+
+        # Move contents from temp_extract/workspace to target_path
+        source_dir = temp_extract / "workspace"
+        if source_dir.exists():
+            for item in os.listdir(source_dir):
+                s = source_dir / item
+                d = target_path / item
+                if s.is_dir():
+                    if d.exists(): shutil.rmtree(d)
+                    shutil.copytree(s, d)
+                else:
+                    shutil.copy2(s, d)
+
+        shutil.rmtree(temp_extract)
+
 sandbox_manager = SandboxManager()

@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     DEFAULT_MODEL: str = "gpt-4o"
     AGENT_MODEL: str = "gpt-4o-mini"
 
+    # Debugging Loop Settings
+    MAX_DEBUG_RETRIES: int = 3
+
     # Task-Specific Models (Overrides)
     MODEL_REPO_ANALYSIS: Optional[str] = None
     MODEL_ISSUE_ANALYSIS: Optional[str] = None

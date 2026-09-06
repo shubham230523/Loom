@@ -27,10 +27,20 @@ export default function SolutionPlanScreen() {
 
   const approveMutation = useMutation({
     mutationFn: (approved: boolean) => ContributionService.approvePlan(repositoryId!, plan!.id, approved),
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       queryClient.setQueryData(['solution-plan', id], data);
       if (data.status === 'approved') {
-        console.log('Plan approved, starting implementation...');
+        try {
+          await ContributionService.setupWorkspace(repositoryId!, id!);
+          await ContributionService.executeImplementation(repositoryId!, id!);
+
+          router.replace({
+            pathname: '/contribution/[id]/implementation',
+            params: { id, repositoryId }
+          });
+        } catch (err) {
+          console.error('Failed to trigger implementation:', err);
+        }
       } else {
         router.back();
       }

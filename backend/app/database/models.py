@@ -370,6 +370,7 @@ class Contribution(Base):
         uselist=False,
         cascade="all, delete-orphan"
     )
+    diff_summary: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
 
 class AgentRun(Base):
     __tablename__ = "agent_runs"
