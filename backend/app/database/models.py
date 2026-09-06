@@ -482,3 +482,29 @@ class CodeReview(Base):
     )
 
     contribution: Mapped[Contribution] = relationship("Contribution", back_populates="code_reviews")
+
+class ModelRun(Base):
+    __tablename__ = "model_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4
+    )
+    provider: Mapped[str] = mapped_column(String(100), index=True)
+    model: Mapped[str] = mapped_column(String(255), index=True)
+    task: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+
+    duration: Mapped[float] = mapped_column(Float) # in seconds
+
+    prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    total_tokens: Mapped[int] = mapped_column(Integer, default=0)
+
+    status: Mapped[str] = mapped_column(String(50)) # success, failed
+    error_info: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc)
+    )
