@@ -40,10 +40,15 @@ class Settings(BaseSettings):
         return v
 
     # AI Provider Configuration
-    AI_PROVIDER: str = "loom-cloud"  # openai, anthropic, loom-cloud
+    AI_PROVIDER: str = "ollama-cloud"  # openai, anthropic, loom-cloud, ollama-cloud, openrouter
     OPENAI_API_KEY: Optional[str] = None
     ANTHROPIC_API_KEY: Optional[str] = None
     LOOM_CLOUD_API_KEY: Optional[str] = None
+    OLLAMA_API_KEY: Optional[str] = None
+    OLLAMA_BASE_URL: str = "https://api.ollama.com" # Placeholder
+    OPENROUTER_API_KEY: Optional[str] = None
+    OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
+    APP_URL: str = "https://loom.dev" # For OpenRouter headers
 
     # Model Settings
     DEFAULT_MODEL: str = "gpt-4o"
