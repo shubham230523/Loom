@@ -59,6 +59,12 @@ class Settings(BaseSettings):
     IGNORED_DIRECTORIES: List[str] = [".git", "node_modules", "venv", ".venv", "__pycache__", "dist", "build"]
     IGNORED_FILES: List[str] = [".DS_Store", "package-lock.json", "yarn.lock", "pnpm-lock.yaml"]
 
+    # Contribution Rule Settings
+    CONTRIBUTING_FILE_VARIANTS: List[str] = ["CONTRIBUTING.md", "CONTRIBUTING.rst", "CONTRIBUTING.txt", "CONTRIBUTING", "contributing.md"]
+    GITHUB_DIR: str = ".github"
+    ISSUE_TEMPLATE_DIRS: List[str] = ["ISSUE_TEMPLATE", "issue_template"]
+    PULL_REQUEST_TEMPLATE_VARIANTS: List[str] = ["PULL_REQUEST_TEMPLATE.md", "pull_request_template.md"]
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

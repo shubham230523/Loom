@@ -117,6 +117,102 @@ class Repository(Base):
         back_populates="repository",
         cascade="all, delete-orphan"
     )
+    indexes: Mapped[List[RepositoryIndex]] = relationship(
+        "RepositoryIndex",
+        back_populates="repository",
+        cascade="all, delete-orphan"
+    )
+
+class RepositoryIndex(Base):
+    __tablename__ = "repository_indexes"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4
+    )
+    repository_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("repositories.id", ondelete="CASCADE"),
+        index=True
+    )
+    branch: Mapped[str] = mapped_column(String(100))
+    commit_sha: Mapped[str] = mapped_column(String(100), index=True)
+    status: Mapped[str] = mapped_column(String(50), default="pending") # pending, in_progress, completed, failed
+    error_info: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc)
+    )
+
+    repository: Mapped[Repository] = relationship("Repository", back_populates="indexes")
+    files: Mapped[List[RepositoryFile]] = relationship(
+        "RepositoryFile",
+        back_populates="repository_index",
+        cascade="all, delete-orphan"
+    )
+
+class RepositoryFile(Base):
+    __tablename__ = "repository_files"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4
+    )
+    repository_index_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("repository_indexes.id", ondelete="CASCADE"),
+        index=True
+    )
+    path: Mapped[str] = mapped_column(String(1024), index=True)
+    size_kb: Mapped[float] = mapped_column(Float, default=0.0)
+    content_hash: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc)
+    )
+
+    repository_index: Mapped[RepositoryIndex] = relationship("RepositoryIndex", back_populates="files")
+    symbols: Mapped[List[RepositorySymbol]] = relationship(
+        "RepositorySymbol",
+        back_populates="repository_file",
+        cascade="all, delete-orphan"
+    )
+
+class RepositorySymbol(Base):
+    __tablename__ = "repository_symbols"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4
+    )
+    repository_file_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("repository_files.id", ondelete="CASCADE"),
+        index=True
+    )
+    name: Mapped[str] = mapped_column(String(512), index=True)
+    type: Mapped[str] = mapped_column(String(100)) # class, function, method, interface, etc.
+    start_line: Mapped[int] = mapped_column(Integer)
+    end_line: Mapped[int] = mapped_column(Integer)
+    start_column: Mapped[int] = mapped_column(Integer)
+    end_column: Mapped[int] = mapped_column(Integer)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc)
+    )
+
+    repository_file: Mapped[RepositoryFile] = relationship("RepositoryFile", back_populates="symbols")
 
 class Issue(Base):
     __tablename__ = "issues"

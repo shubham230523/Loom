@@ -1,5 +1,5 @@
 from .session import engine, SessionLocal, Base, get_db
-from .models import User, GitHubAccount, Repository, Issue, Opportunity, Contribution, AgentRun, AgentEvent, TestRun, CodeReview
+from .models import User, GitHubAccount, Repository, Issue, Opportunity, Contribution, AgentRun, AgentEvent, TestRun, CodeReview, RepositoryIndex, RepositoryFile, RepositorySymbol
 
 __all__ = [
     "engine",
@@ -15,5 +15,8 @@ __all__ = [
     "AgentRun",
     "AgentEvent",
     "TestRun",
-    "CodeReview"
+    "CodeReview",
+    "RepositoryIndex",
+    "RepositoryFile",
+    "RepositorySymbol"
 ]

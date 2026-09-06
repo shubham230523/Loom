@@ -108,6 +108,26 @@ class RepositoryService:
                 raise LoomError(f"Repository clone failed: {str(e)}", status_code=500)
             raise
 
+    async def get_current_commit_sha(self, workspace: Workspace) -> str:
+        """
+        Returns the current commit SHA of the repository in the workspace.
+        """
+        cmd = ["git", "rev-parse", "HEAD"]
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                cwd=str(workspace.path),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await process.communicate()
+            if process.returncode != 0:
+                raise LoomError(f"Failed to get commit SHA: {stderr.decode().strip()}")
+            return stdout.decode().strip()
+        except Exception as e:
+            logger.error(f"Error getting commit SHA: {str(e)}")
+            raise LoomError(f"Failed to get commit SHA: {str(e)}")
+
     async def discover_files(self, workspace: Workspace) -> List[Dict[str, Any]]:
         """
         Walks through the workspace and discovers files and directories.
