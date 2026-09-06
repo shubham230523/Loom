@@ -4,6 +4,7 @@ from typing import Optional, List, Dict, Any
 from backend.app.database import Repository, RepositoryIndex, RepositoryFile, RepositorySymbol
 from backend.app.repository.service import repository_service, Workspace
 from backend.app.repository.symbol_extractor import symbol_extractor
+from backend.app.repository.analyzer import repository_analyzer
 from backend.app.utils.logging import logger
 from backend.app.api.errors import LoomError
 
@@ -106,7 +107,10 @@ class RepositoryIndexer:
                 except Exception as e:
                     logger.warning(f"Failed to process symbols for {file_info['path']}: {str(e)}")
 
-            # 7. Finalize index
+            # 7. Generate AI Summary
+            await repository_analyzer.update_index_summary(db, index, workspace)
+
+            # 8. Finalize index
             index.status = "completed"
             await db.commit()
             logger.info(f"Successfully indexed {repository.full_name} at {commit_sha}")

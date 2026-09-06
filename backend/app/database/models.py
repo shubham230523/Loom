@@ -141,6 +141,8 @@ class RepositoryIndex(Base):
     status: Mapped[str] = mapped_column(String(50), default="pending") # pending, in_progress, completed, failed
     error_info: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+    summary: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc)
