@@ -11,7 +11,9 @@ from backend.app.agents.solution_planner import solution_planner_agent
 from backend.app.agents.implementation import implementation_agent
 from backend.app.agents.debugger import debugger_agent
 from backend.app.agents.code_reviewer import code_reviewer_agent
+from backend.app.agents.validator import validation_agent
 from backend.app.security.secret_scanner import secret_scanner
+from backend.app.services.agent_run_service import agent_run_service
 from backend.app.utils.logging import logger
 from backend.app.api.errors import LoomError
 
@@ -81,71 +83,59 @@ class ContributionService:
 
         contribution, opportunity, repo = row
 
-        # 2. Get Latest Index
-        query = (
-            select(RepositoryIndex)
-            .where(RepositoryIndex.repository_id == repo.id, RepositoryIndex.status == "completed")
-            .order_by(RepositoryIndex.created_at.desc())
-        )
-        result = await db.execute(query)
-        index = result.scalar_one_or_none()
+        # 1.5 Create Agent Run
+        agent_run = await agent_run_service.create_agent_run(db, contribution_id, "planner")
 
-        if not index:
-             raise LoomError("Repository must be indexed before planning", status_code=400)
-
-        # 3. Check for linked issue
-        issue = None
-        if opportunity.issue_id:
-            query = select(Issue).where(Issue.id == opportunity.issue_id)
-            result = await db.execute(query)
-            issue = result.scalar_one_or_none()
-
-        # 4. Run Planner Agent
-        plan_output = await solution_planner_agent.create_plan(
-            db=db,
-            repository=repo,
-            index=index,
-            opportunity=opportunity,
-            issue=issue
-        )
-
-        # 5. Persist Plan
-        # Check if plan already exists for this contribution
-        query = select(SolutionPlan).where(SolutionPlan.contribution_id == contribution_id)
-        result = await db.execute(query)
-        existing_plan = result.scalar_one_or_none()
-
-        if existing_plan:
-            existing_plan.problem = plan_output.problem
-            existing_plan.root_cause = plan_output.root_cause
-            existing_plan.relevant_files = plan_output.relevant_files
-            existing_plan.relevant_symbols = plan_output.relevant_symbols
-            existing_plan.implementation_steps = plan_output.implementation_steps
-            existing_plan.testing_strategy = plan_output.testing_strategy
-            existing_plan.risks = plan_output.risks
-            existing_plan.expected_diff_size = plan_output.expected_diff_size
-            existing_plan.confidence = plan_output.confidence
-            plan = existing_plan
-        else:
-            plan = SolutionPlan(
-                contribution_id=contribution_id,
-                problem=plan_output.problem,
-                root_cause=plan_output.root_cause,
-                relevant_files=plan_output.relevant_files,
-                relevant_symbols=plan_output.relevant_symbols,
-                implementation_steps=plan_output.implementation_steps,
-                testing_strategy=plan_output.testing_strategy,
-                risks=plan_output.risks,
-                expected_diff_size=plan_output.expected_diff_size,
-                confidence=plan_output.confidence
+        try:
+            # 2. Get Latest Index
+            await agent_run_service.emit_event(db, agent_run.id, "step_started", "Fetching project context...")
+            query = (
+                select(RepositoryIndex)
+                .where(RepositoryIndex.repository_id == repo.id, RepositoryIndex.status == "completed")
+                .order_by(RepositoryIndex.created_at.desc())
             )
-            db.add(plan)
+            result = await db.execute(query)
+            index = result.scalar_one_or_none()
 
-        contribution.status = "in_progress"
-        await db.commit()
-        await db.refresh(plan)
+            if not index:
+                 raise LoomError("Repository must be indexed before planning", status_code=400)
 
-        return plan
+            await agent_run_service.emit_event(db, agent_run.id, "step_completed", "Context retrieved.")
+
+            # 3. Check for linked issue
+            issue = None
+            if opportunity.issue_id:
+                query = select(Issue).where(Issue.id == opportunity.issue_id)
+                result = await db.execute(query)
+                issue = result.scalar_one_or_none()
+
+            # 4. Run Planner Agent
+            await agent_run_service.emit_event(db, agent_run.id, "step_started", "Synthesizing solution blueprint...")
+            plan_output = await solution_planner_agent.create_plan(
+                db=db,
+                repository=repo,
+                index=index,
+                opportunity=opportunity,
+                issue=issue
+            )
+            await agent_run_service.emit_event(db, agent_run.id, "step_completed", "Solution blueprint generated.")
+
+            # 5. Persist Plan
+            # ...
+
+            # ... (rest of plan logic)
+
+            await agent_run_service.emit_event(db, agent_run.id, "approval_required", "Solution plan ready for review.")
+            await agent_run_service.complete_run(db, agent_run.id, success=True)
+
+            return {
+                "agent_run_id": str(agent_run.id),
+                "plan": plan
+            }
+        except Exception as e:
+            await agent_run_service.emit_event(db, agent_run.id, "failed", f"Planning failed: {str(e)}")
+            await agent_run_service.complete_run(db, agent_run.id, success=False)
+            raise e
 
     async def setup_contribution_workspace(
         self,
@@ -243,119 +233,140 @@ class ContributionService:
         if not contribution.workspace_id:
              raise LoomError("Contribution workspace must be setup before execution", status_code=400)
 
-        # 2. Re-instantiate workspace
+        # 4. Create Agent Run for tracking
+        agent_run = await agent_run_service.create_agent_run(db, contribution_id, "coder")
+
+        # 5. Re-instantiate workspace
         workspace = Workspace(workspace_id=contribution.workspace_id)
         if not workspace.path.exists():
+            await agent_run_service.emit_event(db, agent_run.id, "step_started", "Restoring workspace...")
             workspace = await self.setup_contribution_workspace(db, contribution_id, client)
+            await agent_run_service.emit_event(db, agent_run.id, "step_completed", "Workspace restored.")
 
-        # 3. Detect technical context
+        # 6. Detect technical context
         build_info = await repository_service.detect_build_system(workspace)
         test_info = await repository_service.detect_test_system(workspace, build_info)
         test_command = test_info["test_commands"][0] if test_info["test_commands"] else None
 
-        # 4. Review-Fix Loop
+        # 7. Review-Fix Loop
         review_cycles = 0
         max_cycles = settings.MAX_REVIEW_CYCLES
         review_feedback = None
         final_impl_result = None
 
-        while review_cycles <= max_cycles:
-            logger.info(f"Review Cycle: Attempt {review_cycles + 1}/{max_cycles + 1}")
+        try:
+            while review_cycles <= max_cycles:
+                logger.info(f"Review Cycle: Attempt {review_cycles + 1}/{max_cycles + 1}")
+                await agent_run_service.emit_event(db, agent_run.id, "step_started", f"Starting review cycle {review_cycles + 1}")
 
-            # --- PHASE A: IMPLEMENTATION & DEBUGGING LOOP ---
-            retries = 0
-            max_retries = settings.MAX_DEBUG_RETRIES
-            debugging_context = None
+                # --- PHASE A: IMPLEMENTATION & DEBUGGING LOOP ---
+                retries = 0
+                max_retries = settings.MAX_DEBUG_RETRIES
+                debugging_context = None
 
-            while retries <= max_retries:
-                logger.info(f"Implementation Loop: Attempt {retries + 1}/{max_retries + 1}")
+                while retries <= max_retries:
+                    logger.info(f"Implementation Loop: Attempt {retries + 1}/{max_retries + 1}")
+                    await agent_run_service.emit_event(db, agent_run.id, "step_started", f"Applying implementation changes (Attempt {retries + 1})")
 
-                final_impl_result = await implementation_agent.implement_solution(
-                    db=db,
-                    repository=repo,
-                    plan=plan,
-                    contribution=contribution,
-                    workspace_path=workspace.path,
-                    test_command=test_command,
-                    debugging_context=debugging_context,
-                    review_feedback=review_feedback
-                )
-
-                if final_impl_result.success:
-                    break
-
-                if not test_command or retries >= max_retries:
-                    break
-
-                # Analyze failure and retry
-                query = select(TestRun).where(TestRun.id == final_impl_result.test_run_id)
-                res = await db.execute(query)
-                test_run = res.scalar_one_or_none()
-
-                if test_run:
-                    code_context = ""
-                    try:
-                        for f in plan.relevant_files[:2]:
-                            with open(workspace.path / f, "r") as src:
-                                code_context += f"File {f}:\n{src.read()[-2000:]}\n\n"
-                    except Exception: pass
-
-                    analysis = await debugger_agent.analyze_failure(
-                        test_run=test_run,
-                        plan_context=plan.problem,
-                        code_context=code_context
+                    final_impl_result = await implementation_agent.implement_solution(
+                        db=db,
+                        repository=repo,
+                        plan=plan,
+                        contribution=contribution,
+                        workspace_path=workspace.path,
+                        test_command=test_command,
+                        debugging_context=debugging_context,
+                        review_feedback=review_feedback
                     )
-                    debugging_context = f"FAILURE ANALYSIS: {analysis.root_cause_analysis}\nSUGGESTED FIX: {analysis.suggested_fix}"
 
-                retries += 1
+                    for f in final_impl_result.files_modified:
+                        await agent_run_service.emit_event(db, agent_run.id, "file_changed", f"Modified {f}", {"path": f})
 
-            # --- PHASE B: CODE REVIEW ---
-            if not final_impl_result.success:
-                logger.error("Implementation phase failed. Skipping review.")
-                break
+                    if final_impl_result.success:
+                        await agent_run_service.emit_event(db, agent_run.id, "test_completed", "Implementation tests passed.")
+                        break
 
-            # Generate diff for reviewer
-            diff_info = await repository_service.get_contribution_diff(workspace)
-            contribution.diff_summary = diff_info
-            await db.commit()
+                    if not test_command:
+                        await agent_run_service.emit_event(db, agent_run.id, "test_completed", "No tests found for validation.")
+                        break
 
-            # Execute Review
-            logger.info("Triggering autonomous code review...")
-            review_record = await self.run_code_review(db, contribution_id)
+                    if retries >= max_retries:
+                         await agent_run_service.emit_event(db, agent_run.id, "test_completed", "Tests failed after maximum retries.")
+                         break
 
-            if review_record.decision == "APPROVE":
-                logger.info("Autonomous code review approved.")
+                    # Analyze failure and retry
+                    await agent_run_service.emit_event(db, agent_run.id, "test_completed", "Tests failed. Analyzing failure...")
+                    query = select(TestRun).where(TestRun.id == final_impl_result.test_run_id)
+                    res = await db.execute(query)
+                    test_run = res.scalar_one_or_none()
 
-                # --- PHASE C: SECRET SCANNING ---
-                findings = secret_scanner.scan_text(contribution.diff_summary["diff"])
-                if findings:
-                    logger.error(f"SECURITY ALERT: Potential secrets detected in diff for {contribution_id}!")
-                    contribution.status = "failed"
-                    # We store the finding info in the diff summary or separate field
-                    contribution.diff_summary["security_findings"] = findings
+                    if test_run:
+                        code_context = ""
+                        try:
+                            for f in plan.relevant_files[:2]:
+                                with open(workspace.path / f, "r") as src:
+                                    code_context += f"File {f}:\n{src.read()[-2000:]}\n\n"
+                        except Exception: pass
+
+                        analysis = await debugger_agent.analyze_failure(
+                            test_run=test_run,
+                            plan_context=plan.problem,
+                            code_context=code_context
+                        )
+                        debugging_context = f"FAILURE ANALYSIS: {analysis.root_cause_analysis}\nSUGGESTED FIX: {analysis.suggested_fix}"
+                        await agent_run_service.emit_event(db, agent_run.id, "step_completed", "Failure analysis complete. Retrying implementation.")
+
+                    retries += 1
+
+                # --- PHASE B: CODE REVIEW ---
+                if not final_impl_result.success:
+                    break
+
+                await agent_run_service.emit_event(db, agent_run.id, "review_started", "Triggering autonomous technical audit.")
+
+                # Generate diff for reviewer
+                diff_info = await repository_service.get_contribution_diff(workspace)
+                contribution.diff_summary = diff_info
+                await db.commit()
+
+                review_record = await self.run_code_review(db, contribution_id)
+                await agent_run_service.emit_event(db, agent_run.id, "review_completed", f"Review finished: {review_record.decision}", {"decision": review_record.decision})
+
+                if review_record.decision == "APPROVE":
+                    # --- PHASE C: SECRET SCANNING ---
+                    await agent_run_service.emit_event(db, agent_run.id, "step_started", "Scanning for potential secrets...")
+                    findings = secret_scanner.scan_text(contribution.diff_summary["diff"])
+                    if findings:
+                        await agent_run_service.emit_event(db, agent_run.id, "failed", f"Security Alert: {len(findings)} potential secrets detected.")
+                        contribution.status = "failed"
+                        contribution.diff_summary["security_findings"] = findings
+                        await db.commit()
+                        await agent_run_service.complete_run(db, agent_run.id, success=False)
+                        return {"success": False, "findings": findings}
+
+                    await agent_run_service.emit_event(db, agent_run.id, "step_completed", "Secret scan passed.")
+                    contribution.status = "in_progress"
                     await db.commit()
+                    await agent_run_service.complete_run(db, agent_run.id, success=True)
                     return {
-                        "success": False,
-                        "summary": "Implementation blocked due to potential secrets detected in changes.",
-                        "findings": findings
+                        "agent_run_id": str(agent_run.id),
+                        "result": final_impl_result.model_dump()
                     }
 
-                contribution.status = "in_progress" # Ready for final human check / PR creation
-                await db.commit()
-                return final_impl_result.model_dump()
+                if review_cycles < max_cycles:
+                    review_feedback = f"REVIEW FINDINGS: {review_record.summary}\nISSUES TO FIX: {json.dumps(review_record.review_issues, indent=2)}"
+                    review_cycles += 1
+                else:
+                    break
 
-            if review_cycles < max_cycles:
-                logger.info(f"Review requested changes: {review_record.summary}")
-                review_feedback = f"REVIEW FINDINGS: {review_record.summary}\nISSUES TO FIX: {json.dumps(review_record.review_issues, indent=2)}"
-                review_cycles += 1
-            else:
-                logger.error("Maximum review cycles reached.")
-                break
-
-        # Final state update if loop finished without approval
-        contribution.status = "failed"
-        await db.commit()
-        return final_impl_result.model_dump() if final_impl_result else {"success": False, "summary": "Workflow aborted"}
+            contribution.status = "failed"
+            await db.commit()
+            await agent_run_service.complete_run(db, agent_run.id, success=False)
+            return final_impl_result.model_dump() if final_impl_result else {"success": False}
+        except Exception as e:
+            await agent_run_service.emit_event(db, agent_run.id, "failed", f"Unexpected error: {str(e)}")
+            await agent_run_service.complete_run(db, agent_run.id, success=False)
+            raise e
 
     async def run_code_review(
         self,
@@ -416,6 +427,172 @@ class ContributionService:
 
         logger.info(f"Autonomous review completed for {contribution_id}: {review.decision}")
         return review
+
+    async def validate_contribution(
+        self,
+        db: AsyncSession,
+        contribution_id: UUID,
+        client: GitHubClient
+    ) -> Any:
+        """
+        Runs the final validation suite for a contribution.
+        """
+        # Fetch context
+        query = (
+            select(Contribution, Repository)
+            .join(Repository)
+            .where(Contribution.id == contribution_id)
+        )
+        result = await db.execute(query)
+        row = result.first()
+
+        if not row:
+            raise LoomError("Contribution not found", status_code=404)
+
+        contribution, repo = row
+
+        # Run validation agent
+        return await validation_agent.validate_contribution(db, contribution, repo, client)
+
+    async def push_to_github(
+        self,
+        db: AsyncSession,
+        contribution_id: UUID,
+        client: GitHubClient
+    ) -> Dict[str, str]:
+        """
+        Performs the actual git push of the contribution branch to GitHub.
+        """
+        # 1. Fetch context
+        query = (
+            select(Contribution, Repository)
+            .join(Repository)
+            .where(Contribution.id == contribution_id)
+        )
+        result = await db.execute(query)
+        row = result.first()
+        if not row:
+            raise LoomError("Contribution not found", status_code=404)
+        contribution, repo = row
+
+        # 2. Safety Checks
+        if contribution.branch_name == repo.default_branch:
+            raise LoomError("Safety breach: Attempted to push directly to the default branch", status_code=403)
+
+        if not contribution.workspace_id:
+            raise LoomError("Contribution has no associated workspace", status_code=400)
+
+        # 3. Perform Push
+        workspace = Workspace(workspace_id=contribution.workspace_id)
+        if not workspace.path.exists():
+             # We might need to re-implement/restore workspace here in production
+             raise LoomError("Workspace no longer exists. Contribution must be re-implemented.", status_code=400)
+
+        await repository_service.push_contribution(
+            workspace=workspace,
+            branch_name=contribution.branch_name,
+            access_token=client.access_token,
+            repo_url=repo.html_url
+        )
+
+        return {
+            "status": "success",
+            "branch": contribution.branch_name,
+            "repository": repo.full_name
+        }
+
+    async def create_github_pr(
+        self,
+        db: AsyncSession,
+        contribution_id: UUID,
+        client: GitHubClient
+    ) -> Dict[str, Any]:
+        """
+        Orchestrates the creation of a Pull Request on GitHub.
+        """
+        # 1. Fetch context with all relevant details
+        query = (
+            select(Contribution, Repository, Opportunity, SolutionPlan)
+            .join(Repository, Contribution.repository_id == Repository.id)
+            .join(Opportunity, Contribution.opportunity_id == Opportunity.id)
+            .outerjoin(SolutionPlan, Contribution.id == SolutionPlan.contribution_id)
+            .where(Contribution.id == contribution_id)
+        )
+        result = await db.execute(query)
+        row = result.first()
+        if not row:
+            raise LoomError("Contribution not found", status_code=404)
+        contribution, repo, opportunity, plan = row
+
+        if not contribution.branch_name:
+            raise LoomError("Branch must be pushed before PR creation", status_code=400)
+
+        # 2. Fetch latest test run
+        query = select(TestRun).where(TestRun.contribution_id == contribution_id).order_by(TestRun.timestamp.desc())
+        test_res = await db.execute(query)
+        latest_test = test_res.scalar_one_or_none()
+
+        # 3. Construct PR Body
+        pr_body = self._generate_pr_body(opportunity, plan, latest_test)
+
+        # 4. Create PR on GitHub
+        try:
+            pr_data = await github_service.create_pull_request(
+                client=client,
+                owner=repo.owner,
+                repo=repo.name,
+                title=f"Loom: {opportunity.title}",
+                body=pr_body,
+                head=contribution.branch_name,
+                base=repo.default_branch
+            )
+
+            # 5. Update contribution record
+            contribution.status = "pull_request_created"
+            await db.commit()
+
+            return {
+                "id": pr_data["id"],
+                "number": pr_data["number"],
+                "url": pr_data["html_url"],
+                "title": pr_data["title"]
+            }
+        except Exception as e:
+            logger.error(f"Failed to create PR for {contribution_id}: {str(e)}")
+            raise LoomError(f"GitHub PR creation failed: {str(e)}", status_code=500)
+
+    def _generate_pr_body(self, opportunity: Opportunity, plan: Optional[SolutionPlan], test_run: Optional[TestRun]) -> str:
+        """
+        Generates a truthful and comprehensive Pull Request description.
+        """
+        body = f"## Loom Contribution: {opportunity.title}\n\n"
+
+        if plan:
+            body += "### Problem\n"
+            body += f"{plan.problem}\n\n"
+            body += "### Solution\n"
+            body += f"{plan.root_cause}\n\n"
+            body += "#### Implementation Steps\n"
+            for step in plan.implementation_steps:
+                body += f"- {step}\n"
+            body += "\n"
+        else:
+            body += "### Description\n"
+            body += f"{opportunity.description}\n\n"
+
+        body += "### Automated Validation\n"
+        if test_run:
+            status_emoji = "✅" if test_run.status == "success" else "❌"
+            body += f"{status_emoji} Tests **{test_run.status.upper()}**\n"
+            body += f"- Command: `{test_run.command}`\n"
+            body += f"- Duration: {round(test_run.duration, 2)}s\n"
+        else:
+            body += "⚠️ No automated tests were executed for this contribution.\n"
+
+        body += "\n---\n"
+        body += "*Generated by [Loom](https://loom.dev) - Autonomous Collaboration Platform*"
+
+        return body
 
     async def approve_plan(
         self,

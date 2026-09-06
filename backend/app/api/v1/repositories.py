@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List, Any
 from backend.app.database import get_db, User
 from backend.app.security.auth import get_current_user
+from sqlalchemy.orm import selectinload
 from backend.app.github.service import github_service
 from backend.app.ai import semantic_search_service
 from backend.app.repository.issue_service import issue_service
@@ -221,9 +222,19 @@ async def get_contribution_details(
     """
     Retrieves detailed information for a specific contribution.
     """
-    query = select(Contribution).where(
-        Contribution.id == contribution_id,
-        Contribution.repository_id == repository_id
+    query = (
+        select(Contribution)
+        .options(
+            selectinload(Contribution.test_runs),
+            selectinload(Contribution.code_reviews),
+            selectinload(Contribution.solution_plan),
+            selectinload(Contribution.repository),
+            selectinload(Contribution.opportunity)
+        )
+        .where(
+            Contribution.id == contribution_id,
+            Contribution.repository_id == repository_id
+        )
     )
     result = await db.execute(query)
     contribution = result.scalar_one_or_none()
@@ -301,6 +312,45 @@ async def run_contribution_review(
     Triggers an autonomous technical review of the implementation.
     """
     return await contribution_service.run_code_review(db, contribution_id)
+
+@router.get("/{repository_id}/contributions/{contribution_id}/validate")
+async def validate_contribution_final(
+    repository_id: UUID,
+    contribution_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Performs the final validation check before PR creation.
+    """
+    client = await github_service.get_client_for_user(db, current_user)
+    return await contribution_service.validate_contribution(db, contribution_id, client)
+
+@router.post("/{repository_id}/contributions/{contribution_id}/push")
+async def push_contribution_to_github(
+    repository_id: UUID,
+    contribution_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Pushes the autonomous contribution branch to the remote repository.
+    """
+    client = await github_service.get_client_for_user(db, current_user)
+    return await contribution_service.push_to_github(db, contribution_id, client)
+
+@router.post("/{repository_id}/contributions/{contribution_id}/pull-request")
+async def create_contribution_pr(
+    repository_id: UUID,
+    contribution_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Creates a real Pull Request on GitHub for the contribution.
+    """
+    client = await github_service.get_client_for_user(db, current_user)
+    return await contribution_service.create_github_pr(db, contribution_id, client)
 
 @router.get("/{repository_id}/opportunities/{opportunity_id}")
 async def get_opportunity_details(
@@ -626,9 +676,19 @@ async def get_contribution_details(
     """
     Retrieves detailed information for a specific contribution.
     """
-    query = select(Contribution).where(
-        Contribution.id == contribution_id,
-        Contribution.repository_id == repository_id
+    query = (
+        select(Contribution)
+        .options(
+            selectinload(Contribution.test_runs),
+            selectinload(Contribution.code_reviews),
+            selectinload(Contribution.solution_plan),
+            selectinload(Contribution.repository),
+            selectinload(Contribution.opportunity)
+        )
+        .where(
+            Contribution.id == contribution_id,
+            Contribution.repository_id == repository_id
+        )
     )
     result = await db.execute(query)
     contribution = result.scalar_one_or_none()
@@ -706,6 +766,45 @@ async def run_contribution_review(
     Triggers an autonomous technical review of the implementation.
     """
     return await contribution_service.run_code_review(db, contribution_id)
+
+@router.get("/{repository_id}/contributions/{contribution_id}/validate")
+async def validate_contribution_final(
+    repository_id: UUID,
+    contribution_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Performs the final validation check before PR creation.
+    """
+    client = await github_service.get_client_for_user(db, current_user)
+    return await contribution_service.validate_contribution(db, contribution_id, client)
+
+@router.post("/{repository_id}/contributions/{contribution_id}/push")
+async def push_contribution_to_github(
+    repository_id: UUID,
+    contribution_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Pushes the autonomous contribution branch to the remote repository.
+    """
+    client = await github_service.get_client_for_user(db, current_user)
+    return await contribution_service.push_to_github(db, contribution_id, client)
+
+@router.post("/{repository_id}/contributions/{contribution_id}/pull-request")
+async def create_contribution_pr(
+    repository_id: UUID,
+    contribution_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Creates a real Pull Request on GitHub for the contribution.
+    """
+    client = await github_service.get_client_for_user(db, current_user)
+    return await contribution_service.create_github_pr(db, contribution_id, client)
 
 @router.get("/{repository_id}/opportunities/{opportunity_id}")
 async def get_opportunity_details(

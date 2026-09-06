@@ -180,4 +180,27 @@ class GitHubService:
         """
         return await client.get(f"/repos/{owner}/{repo}/pulls/{pull_number}/files")
 
+    async def create_pull_request(
+        self,
+        client: GitHubClient,
+        owner: str,
+        repo: str,
+        title: str,
+        body: str,
+        head: str,
+        base: str = "main",
+        draft: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Creates a new pull request on GitHub.
+        """
+        payload = {
+            "title": title,
+            "body": body,
+            "head": head,
+            "base": base,
+            "draft": draft
+        }
+        return await client.post(f"/repos/{owner}/{repo}/pulls", json_data=payload)
+
 github_service = GitHubService()

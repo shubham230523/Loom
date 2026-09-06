@@ -7,6 +7,7 @@ from .implementation import implementation_agent, ImplementationResult
 from .test_agent import test_agent
 from .debugger import debugger_agent, DebuggingAnalysis
 from .code_reviewer import code_reviewer_agent, CodeReviewResult
+from .validator import validation_agent, ContributionValidation
 
 __all__ = [
     "issue_analyzer_agent",
@@ -25,5 +26,7 @@ __all__ = [
     "debugger_agent",
     "DebuggingAnalysis",
     "code_reviewer_agent",
-    "CodeReviewResult"
+    "CodeReviewResult",
+    "validation_agent",
+    "ContributionValidation"
 ]

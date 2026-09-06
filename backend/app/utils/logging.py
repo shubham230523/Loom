@@ -30,10 +30,11 @@ class StructuredFormatter(logging.Formatter):
 
         # Add extra fields if present
         if hasattr(record, "extra_info") and isinstance(record.extra_info, dict):
-            # Filtering out potential secrets (basic check)
+            # Filtering out potential secrets (more comprehensive check)
+            sensitive_keys = {"password", "token", "key", "secret", "authorization", "github_token", "api_key"}
             filtered_extra = {
                 k: v for k, v in record.extra_info.items()
-                if k.lower() not in ["password", "token", "key", "secret"]
+                if not any(sk in k.lower() for sk in sensitive_keys)
             }
             log_data.update(filtered_extra)
 

@@ -15,6 +15,53 @@ export interface Contribution {
     additions: number;
     deletions: number;
   };
+  test_runs?: TestRun[];
+  code_reviews?: CodeReview[];
+}
+
+export interface TestRun {
+  id: string;
+  command: string;
+  exit_code: number;
+  stdout: string;
+  stderr: string;
+  status: 'success' | 'failure' | 'error';
+  duration: number;
+  timestamp: string;
+}
+
+export interface CodeReview {
+  id: string;
+  decision: 'APPROVE' | 'REQUEST_CHANGES' | 'REJECT';
+  summary: string;
+  review_issues: Array<{
+    file_path?: string;
+    line_number?: number;
+    category: string;
+    description: string;
+    suggestion?: string;
+    severity: string;
+  }>;
+  confidence: number;
+  created_at: string;
+}
+
+export interface ValidationResult {
+  is_valid: boolean;
+  score: number;
+  issues: Array<{
+    category: string;
+    severity: string;
+    message: string;
+    action_required: boolean;
+  }>;
+  summary: string;
+}
+
+export interface AgentRunResponse<T> {
+  agent_run_id: string;
+  plan?: T;
+  result?: T;
 }
 
 export interface SolutionPlan {

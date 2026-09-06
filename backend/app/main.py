@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from backend.app.config import settings
 from backend.app.utils.logging import setup_logging
-from backend.app.api.middleware import RequestIDMiddleware, LoggingMiddleware
+from backend.app.api.middleware import RequestIDMiddleware, LoggingMiddleware, RateLimitMiddleware
 from backend.app.api.errors import (
     LoomError,
     loom_error_handler,
@@ -12,6 +12,7 @@ from backend.app.api.errors import (
     universal_error_handler
 )
 from backend.app.api.v1 import api_v1_router
+from backend.app.api.ws import router as ws_router
 from backend.app.services.redis import redis_service
 
 # Initialize structured logging
@@ -34,6 +35,7 @@ app = FastAPI(
 
 # Register Routers
 app.include_router(api_v1_router, prefix="/api/v1")
+app.include_router(ws_router, prefix="/ws")
 
 # Error Handlers
 app.add_exception_handler(LoomError, loom_error_handler)
@@ -41,6 +43,7 @@ app.add_exception_handler(RequestValidationError, validation_error_handler)
 app.add_exception_handler(Exception, universal_error_handler)
 
 # Add Middlewares
+app.add_middleware(RateLimitMiddleware, limit=100, window=60)
 app.add_middleware(RequestIDMiddleware)
 app.add_middleware(LoggingMiddleware)
 

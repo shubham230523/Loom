@@ -33,6 +33,14 @@ class RedisService:
     def client(self) -> Optional[Redis]:
         return self._redis
 
+    async def get(self, key: str) -> Optional[str]:
+        if not self._redis: return None
+        return await self._redis.get(key)
+
+    async def set(self, key: str, value: str, expire: Optional[int] = None):
+        if not self._redis: return
+        await self._redis.set(key, value, ex=expire)
+
 redis_service = RedisService()
 
 async def get_redis() -> Optional[Redis]:

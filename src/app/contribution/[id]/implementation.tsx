@@ -23,10 +23,13 @@ export default function ImplementationScreen() {
     enabled: !!id && !!repositoryId,
     refetchInterval: (query) => {
         const data = query.state.data as Contribution | undefined;
-        // Keep polling until we have a diff or it fails
         return (data && !data.diff_summary && data.status !== 'failed') ? 3000 : false;
     }
   });
+
+  // Since we don't have the agent_run_id directly here yet (it's returned by the implement call),
+  // we could potentially fetch the latest agent run for this contribution.
+  // For simplicity, we'll focus on the state polling for now or assume implementation call returned it.
 
   if (isLoading) {
     return <LoadingState message="Retrieving implementation status..." />;
@@ -79,7 +82,10 @@ export default function ImplementationScreen() {
                     <Button
                         label="Prepare Pull Request"
                         size="lg"
-                        onPress={() => console.log('Prepare PR')}
+                        onPress={() => router.push({
+                            pathname: '/contribution/[id]/review',
+                            params: { id, repositoryId }
+                        })}
                     />
                 </View>
             </>

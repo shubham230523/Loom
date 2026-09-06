@@ -12,6 +12,7 @@ import { LoadingState } from '@/components/ui/loading-state';
 import { ErrorState } from '@/components/ui/error-state';
 import { ContributionService } from '@/services/contribution.service';
 import { useTheme } from '@/hooks/use-theme';
+import { useAgentEvents } from '@/hooks/use-agent-events';
 
 export default function SolutionPlanScreen() {
   const { id, repositoryId } = useLocalSearchParams<{ id: string, repositoryId: string }>();
@@ -19,24 +20,27 @@ export default function SolutionPlanScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
 
-  const { data: plan, isLoading, isError, error, refetch } = useQuery({
+  const { data: planResponse, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['solution-plan', id],
     queryFn: () => ContributionService.generatePlan(repositoryId!, id!),
     enabled: !!id && !!repositoryId,
   });
 
+  const plan = planResponse?.plan;
+  const { lastEvent } = useAgentEvents(planResponse?.agent_run_id);
+
   const approveMutation = useMutation({
     mutationFn: (approved: boolean) => ContributionService.approvePlan(repositoryId!, plan!.id, approved),
     onSuccess: async (data) => {
-      queryClient.setQueryData(['solution-plan', id], data);
+      queryClient.setQueryData(['solution-plan', id], { ...planResponse, plan: data });
       if (data.status === 'approved') {
         try {
           await ContributionService.setupWorkspace(repositoryId!, id!);
-          await ContributionService.executeImplementation(repositoryId!, id!);
+          const implResponse = await ContributionService.executeImplementation(repositoryId!, id!);
 
           router.replace({
-            pathname: '/contribution/[id]/implementation',
-            params: { id, repositoryId }
+            pathname: '/contribution/[id]/activity',
+            params: { id, repositoryId, agentRunId: implResponse.agent_run_id }
           });
         } catch (err) {
           console.error('Failed to trigger implementation:', err);
@@ -48,7 +52,7 @@ export default function SolutionPlanScreen() {
   });
 
   if (isLoading) {
-    return <LoadingState message="Principal Engineer is designing the solution..." />;
+    return <LoadingState message={lastEvent?.message || "Principal Engineer is designing the solution..."} />;
   }
 
   if (isError) {

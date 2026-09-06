@@ -1,7 +1,11 @@
 import uuid
-from fastapi import Request
+import time
+from fastapi import Request, status
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from backend.app.utils.logging import request_id_var, logger
+from backend.app.services.redis import redis_service
+from backend.app.config import settings
 
 class RequestIDMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
@@ -21,10 +25,6 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         method = request.method
 
         logger.info(f"Incoming request: {method} {path}")
-
-        start_time = request.scope.get("start_time", 0) # Fallback
-        # Note: BaseHTTPMiddleware doesn't easily expose request duration without manual timing
-        import time
         start_time = time.time()
 
         try:
@@ -43,3 +43,46 @@ class LoggingMiddleware(BaseHTTPMiddleware):
                 extra={"extra_info": {"duration": round(process_time, 4)}}
             )
             raise
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    """
+    Simple rate limiting middleware using Redis.
+    Limits requests per IP address.
+    """
+    def __init__(self, app, limit: int = 100, window: int = 60):
+        super().__init__(app)
+        self.limit = limit
+        self.window = window
+
+    async def dispatch(self, request: Request, call_next):
+        if settings.DEBUG and settings.ENVIRONMENT == "development":
+            return await call_next(request)
+
+        client_ip = request.client.host
+        key = f"rate_limit:{client_ip}:{request.url.path}"
+
+        try:
+            current = await redis_service.get(key)
+
+            if current and int(current) >= self.limit:
+                logger.warning(f"Rate limit exceeded for IP: {client_ip} on {request.url.path}")
+                return JSONResponse(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    content={
+                        "error": {
+                            "code": "RATE_LIMIT_EXCEEDED",
+                            "message": "Too many requests. Please try again later."
+                        }
+                    }
+                )
+
+            if not current:
+                await redis_service.set(key, "1", expire=self.window)
+            else:
+                await redis_service.client.incr(key)
+
+        except Exception as e:
+            logger.error(f"Rate limit check failed (Redis error): {str(e)}")
+            return await call_next(request)
+
+        return await call_next(request)

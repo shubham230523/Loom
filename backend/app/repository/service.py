@@ -162,6 +162,69 @@ class RepositoryService:
                 raise LoomError(f"Branch creation failed: {str(e)}", status_code=500)
             raise
 
+    async def push_contribution(self, workspace: Workspace, branch_name: str, access_token: str, repo_url: str):
+        """
+        Pushes the contribution branch to the remote GitHub repository.
+        """
+        try:
+            # 1. Verify we are on the correct branch and it exists
+            cmd = ["git", "rev-parse", "--abbrev-ref", "HEAD"]
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                cwd=str(workspace.path),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, _ = await process.communicate()
+            current_branch = stdout.decode().strip()
+
+            if current_branch != branch_name:
+                raise LoomError(f"Workspace is on branch {current_branch}, expected {branch_name}")
+
+            # 2. Setup authenticated remote URL for push
+            authenticated_url = repo_url.replace("https://", f"https://{access_token}@")
+
+            # 3. Commit changes (if not already committed)
+            # We assume implementation agent already added files, but let's be sure
+            await asyncio.create_subprocess_exec("git", "add", ".", cwd=str(workspace.path))
+            commit_process = await asyncio.create_subprocess_exec(
+                "git", "commit", "-m", f"Loom: Implementation for {branch_name}",
+                cwd=str(workspace.path),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            await commit_process.communicate() # Ignore if nothing to commit
+
+            # 4. Push to remote
+            # We use -u to track and --force if necessary (but usually not for new AI branches)
+            cmd = ["git", "push", authenticated_url, branch_name]
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                cwd=str(workspace.path),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await process.communicate()
+
+            if process.returncode != 0:
+                error_msg = stderr.decode().strip()
+                logger.error(f"Git push failed: {error_msg}")
+
+                if "401" in error_msg or "403" in error_msg:
+                    raise LoomError("GitHub authentication failed or permission denied during push", status_code=403)
+                if "rate limit" in error_msg.lower():
+                    raise LoomError("GitHub rate limit exceeded during push", status_code=429)
+
+                raise LoomError(f"Failed to push branch: {error_msg}", status_code=500)
+
+            logger.info(f"Successfully pushed branch {branch_name} to remote.")
+
+        except Exception as e:
+            if not isinstance(e, LoomError):
+                logger.error(f"Unexpected error during push: {str(e)}")
+                raise LoomError(f"Branch push failed: {str(e)}", status_code=500)
+            raise
+
     async def get_contribution_diff(self, workspace: Workspace) -> Dict[str, Any]:
         """
         Generates a git diff for the changes in the workspace.

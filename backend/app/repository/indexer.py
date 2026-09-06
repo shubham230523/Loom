@@ -93,8 +93,11 @@ class RepositoryIndexer:
                 # Extract symbols
                 try:
                     file_path = workspace.path / file_info["path"]
+                    # For safety, we only read if it's within a reasonable size
+                    # and use errors="ignore" to avoid encoding issues
                     with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                        content = f.read()
+                        # Limit read size for AST extraction context
+                        content = f.read(settings.MAX_FILE_SIZE_KB * 1024)
 
                     symbols = await symbol_extractor.extract_symbols(file_info["path"], content)
 
