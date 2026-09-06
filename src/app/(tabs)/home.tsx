@@ -31,7 +31,12 @@ export default function HomeScreen() {
                 <Text variant="small" className="mb-4">
                   Automate your contribution workflow with intelligent agents.
                 </Text>
-                <Button variant="outline" size="sm" label="Setup Workflow" />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  label="Setup Workflow"
+                  onPress={() => router.push('/auto-contribute')}
+                />
               </CardContent>
             </Card>
 

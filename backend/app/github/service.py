@@ -1,5 +1,5 @@
 import httpx
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from backend.app.config import settings
 from backend.app.api.errors import LoomError
 from backend.app.github.client import GitHubClient
@@ -85,5 +85,99 @@ class GitHubService:
         Retrieves detailed information for a specific repository by its GitHub ID.
         """
         return await client.get(f"/repositories/{repo_id}")
+
+    async def list_issues(
+        self,
+        client: GitHubClient,
+        owner: str,
+        repo: str,
+        state: str = "open",
+        labels: Optional[List[str]] = None,
+        page: int = 1,
+        per_page: int = 30
+    ) -> List[Dict[str, Any]]:
+        """
+        Lists issues for a repository.
+        """
+        params = {
+            "state": state,
+            "page": page,
+            "per_page": per_page,
+            "sort": "updated",
+            "direction": "desc"
+        }
+        if labels:
+            params["labels"] = ",".join(labels)
+
+        return await client.get(f"/repos/{owner}/{repo}/issues", params=params)
+
+    async def get_issue(
+        self,
+        client: GitHubClient,
+        owner: str,
+        repo: str,
+        issue_number: int
+    ) -> Dict[str, Any]:
+        """
+        Retrieves a specific issue by number.
+        """
+        return await client.get(f"/repos/{owner}/{repo}/issues/{issue_number}")
+
+    async def get_issue_comments(
+        self,
+        client: GitHubClient,
+        owner: str,
+        repo: str,
+        issue_number: int
+    ) -> List[Dict[str, Any]]:
+        """
+        Retrieves comments for a specific issue.
+        """
+        return await client.get(f"/repos/{owner}/{repo}/issues/{issue_number}/comments")
+
+    async def list_pull_requests(
+        self,
+        client: GitHubClient,
+        owner: str,
+        repo: str,
+        state: str = "open",
+        page: int = 1,
+        per_page: int = 30
+    ) -> List[Dict[str, Any]]:
+        """
+        Lists pull requests for a repository.
+        """
+        params = {
+            "state": state,
+            "page": page,
+            "per_page": per_page,
+            "sort": "updated",
+            "direction": "desc"
+        }
+        return await client.get(f"/repos/{owner}/{repo}/pulls", params=params)
+
+    async def get_pull_request(
+        self,
+        client: GitHubClient,
+        owner: str,
+        repo: str,
+        pull_number: int
+    ) -> Dict[str, Any]:
+        """
+        Retrieves a specific pull request by number.
+        """
+        return await client.get(f"/repos/{owner}/{repo}/pulls/{pull_number}")
+
+    async def get_pull_request_files(
+        self,
+        client: GitHubClient,
+        owner: str,
+        repo: str,
+        pull_number: int
+    ) -> List[Dict[str, Any]]:
+        """
+        Retrieves files changed in a specific pull request.
+        """
+        return await client.get(f"/repos/{owner}/{repo}/pulls/{pull_number}/files")
 
 github_service = GitHubService()

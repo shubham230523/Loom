@@ -288,6 +288,7 @@ class Opportunity(Base):
     duplicate_risk: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     confidence: Mapped[float] = mapped_column(Float, default=0.0)
     score: Mapped[float] = mapped_column(Float, default=0.0)
+    scoring_reasoning: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
     status: Mapped[str] = mapped_column(String(50), default="pending")
 
     created_at: Mapped[datetime] = mapped_column(

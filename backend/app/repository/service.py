@@ -487,4 +487,91 @@ class RepositoryService:
 
         return test_info
 
+    async def detect_code_signals(self, workspace: Workspace) -> List[Dict[str, Any]]:
+        """
+        Scans the workspace for code-level signals like TODO, FIXME,
+        and unimplemented markers.
+        """
+        signals = []
+        path = workspace.path
+
+        # Regex patterns for common signals
+        patterns = {
+            "TODO": re.compile(r"TODO[:\s]+(.+)", re.IGNORECASE),
+            "FIXME": re.compile(r"FIXME[:\s]+(.+)", re.IGNORECASE),
+            "UNIMPLEMENTED": re.compile(r"(pass|NotImplementedError|throw new Error\(.*not implemented.*\))", re.IGNORECASE)
+        }
+
+        # Extensions to scan
+        valid_extensions = {".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".kt"}
+
+        for root, dirs, files in os.walk(path):
+            # Skip ignored dirs
+            dirs[:] = [d for d in dirs if d not in settings.IGNORED_DIRECTORIES]
+
+            for file in files:
+                ext = os.path.splitext(file)[1].lower()
+                if ext not in valid_extensions:
+                    continue
+
+                file_path = os.path.join(root, file)
+                rel_path = os.path.relpath(file_path, path).replace("\\", "/")
+
+                try:
+                    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                        for i, line in enumerate(f, 1):
+                            for signal_type, pattern in patterns.items():
+                                match = pattern.search(line)
+                                if match:
+                                    signals.append({
+                                        "type": signal_type,
+                                        "path": rel_path,
+                                        "line": i,
+                                        "content": match.group(0).strip(),
+                                        "message": match.group(1).strip() if signal_type != "UNIMPLEMENTED" else ""
+                                    })
+                except Exception as e:
+                    logger.warning(f"Failed to scan file {rel_path} for signals: {str(e)}")
+
+        return signals
+
+    async def detect_test_gaps(self, workspace: Workspace, files_metadata: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Heuristically identifies potential test gaps by checking if source files
+        have corresponding test files.
+        """
+        gaps = []
+        source_files = []
+        test_files = set()
+
+        for f in files_metadata:
+            if f["type"] != "file": continue
+            path = f["path"].lower()
+
+            # Identify test files
+            if "test" in path or "_spec" in path:
+                test_files.add(f["path"])
+            # Identify source files (in common src dirs)
+            elif any(d in path for d in ["src/", "lib/", "app/"]) and f["extension"] in [".py", ".js", ".ts", ".tsx", ".go"]:
+                source_files.append(f)
+
+        for src in source_files:
+            # Simple heuristic: look for test file with same name or in tests/ mirror
+            src_name = os.path.splitext(os.path.basename(src["path"]))[0]
+
+            found = False
+            for test in test_files:
+                if src_name in test.lower():
+                    found = True
+                    break
+
+            if not found:
+                gaps.append({
+                    "type": "test_gap",
+                    "path": src["path"],
+                    "message": f"No obvious test file found for {os.path.basename(src['path'])}"
+                })
+
+        return gaps
+
 repository_service = RepositoryService()
