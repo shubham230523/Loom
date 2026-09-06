@@ -39,6 +39,13 @@ class Settings(BaseSettings):
             return None
         return v
 
+    @field_validator("GITHUB_APP_ID", mode="before")
+    @classmethod
+    def validate_app_id(cls, v: any) -> Optional[int]:
+        if v == "":
+            return None
+        return v
+
     # AI Provider Configuration
     AI_PROVIDER: str = "ollama-cloud"  # openai, anthropic, loom-cloud, ollama-cloud, openrouter, gemini
     OPENAI_API_KEY: Optional[str] = None

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import * as SecureStore from 'expo-secure-store';
+import { storage } from '@/utils/storage';
 import { User, AuthState } from '@/types/auth';
 
 const TOKEN_KEY = 'loom_session_token';
@@ -20,12 +20,12 @@ export const useAuthStore = create<AuthState & AuthActions>((set) => ({
   error: null,
 
   setToken: async (token: string) => {
-    await SecureStore.setItemAsync(TOKEN_KEY, token);
+    await storage.setItem(TOKEN_KEY, token);
     set({ isAuthenticated: true });
   },
 
   getToken: async () => {
-    return await SecureStore.getItemAsync(TOKEN_KEY);
+    return await storage.getItem(TOKEN_KEY);
   },
 
   setUser: (user: User | null) => {
@@ -41,7 +41,7 @@ export const useAuthStore = create<AuthState & AuthActions>((set) => ({
   },
 
   logout: async () => {
-    await SecureStore.deleteItemAsync(TOKEN_KEY);
+    await storage.deleteItem(TOKEN_KEY);
     set({ user: null, isAuthenticated: false, error: null });
   },
 }));
