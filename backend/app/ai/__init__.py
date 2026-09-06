@@ -1,6 +1,7 @@
 from .base import AIProvider
 from .factory import get_ai_provider
 from .gateway import AIGateway, ai_gateway
+from .router import TaskType, model_router
 from .schemas import (
     ChatMessage,
     ChatRequest,

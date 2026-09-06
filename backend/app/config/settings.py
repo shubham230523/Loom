@@ -40,7 +40,7 @@ class Settings(BaseSettings):
         return v
 
     # AI Provider Configuration
-    AI_PROVIDER: str = "ollama-cloud"  # openai, anthropic, loom-cloud, ollama-cloud, openrouter
+    AI_PROVIDER: str = "ollama-cloud"  # openai, anthropic, loom-cloud, ollama-cloud, openrouter, gemini
     OPENAI_API_KEY: Optional[str] = None
     ANTHROPIC_API_KEY: Optional[str] = None
     LOOM_CLOUD_API_KEY: Optional[str] = None
@@ -48,11 +48,23 @@ class Settings(BaseSettings):
     OLLAMA_BASE_URL: str = "https://api.ollama.com" # Placeholder
     OPENROUTER_API_KEY: Optional[str] = None
     OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
+    GEMINI_API_KEY: Optional[str] = None
+    GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta"
     APP_URL: str = "https://loom.dev" # For OpenRouter headers
 
     # Model Settings
     DEFAULT_MODEL: str = "gpt-4o"
     AGENT_MODEL: str = "gpt-4o-mini"
+
+    # Task-Specific Models (Overrides)
+    MODEL_REPO_ANALYSIS: Optional[str] = None
+    MODEL_ISSUE_ANALYSIS: Optional[str] = None
+    MODEL_PLANNING: Optional[str] = None
+    MODEL_IMPLEMENTATION: Optional[str] = None
+    MODEL_DEBUGGING: Optional[str] = None
+    MODEL_TESTING: Optional[str] = None
+    MODEL_CODE_REVIEW: Optional[str] = None
+    MODEL_PR_GENERATION: Optional[str] = None
 
     # Workspace & Cloning Settings
     WORKSPACE_BASE_DIR: str = "/tmp/loom-workspaces"
