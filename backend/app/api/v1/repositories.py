@@ -8,6 +8,7 @@ from backend.app.ai import semantic_search_service
 from backend.app.repository.issue_service import issue_service
 from backend.app.repository.pr_service import pr_service
 from backend.app.repository.opportunity_service import opportunity_service
+from backend.app.repository.contribution_service import contribution_service
 from backend.app.agents.issue_analyzer import issue_analyzer_agent
 from backend.app.agents.conflict_detector import conflict_detector_agent
 from uuid import UUID
@@ -192,6 +193,67 @@ async def get_opportunities(
     """
     opportunities = await opportunity_service.list_opportunities(db, repository_id)
     return opportunities
+
+@router.post("/{repository_id}/contributions")
+async def create_contribution(
+    repository_id: UUID,
+    opportunity_id: UUID = Query(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Starts a new contribution for an opportunity.
+    """
+    return await contribution_service.create_contribution(
+        db=db,
+        user_id=current_user.id,
+        repository_id=repository_id,
+        opportunity_id=opportunity_id
+    )
+
+@router.post("/{repository_id}/contributions/{contribution_id}/plan")
+async def generate_contribution_plan(
+    repository_id: UUID,
+    contribution_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Triggers autonomous solution planning for a contribution.
+    """
+    return await contribution_service.generate_plan(db, contribution_id)
+
+@router.post("/{repository_id}/plans/{plan_id}/approve")
+async def approve_contribution_plan(
+    repository_id: UUID,
+    plan_id: UUID,
+    approved: bool = Query(True),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Approves or rejects an autonomous solution plan.
+    """
+    return await contribution_service.approve_plan(db, plan_id, approved)
+
+@router.post("/{repository_id}/contributions/{contribution_id}/workspace")
+async def setup_contribution_workspace(
+    repository_id: UUID,
+    contribution_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Sets up a clean workspace and branch for a contribution.
+    """
+    client = await github_service.get_client_for_user(db, current_user)
+    workspace = await contribution_service.setup_contribution_workspace(db, contribution_id, client)
+
+    return {
+        "status": "success",
+        "workspace_id": workspace.id,
+        "path": str(workspace.path)
+    }
 
 @router.get("/{repository_id}/opportunities/{opportunity_id}")
 async def get_opportunity_details(
@@ -489,6 +551,67 @@ async def get_opportunities(
     """
     opportunities = await opportunity_service.list_opportunities(db, repository_id)
     return opportunities
+
+@router.post("/{repository_id}/contributions")
+async def create_contribution(
+    repository_id: UUID,
+    opportunity_id: UUID = Query(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Starts a new contribution for an opportunity.
+    """
+    return await contribution_service.create_contribution(
+        db=db,
+        user_id=current_user.id,
+        repository_id=repository_id,
+        opportunity_id=opportunity_id
+    )
+
+@router.post("/{repository_id}/contributions/{contribution_id}/plan")
+async def generate_contribution_plan(
+    repository_id: UUID,
+    contribution_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Triggers autonomous solution planning for a contribution.
+    """
+    return await contribution_service.generate_plan(db, contribution_id)
+
+@router.post("/{repository_id}/plans/{plan_id}/approve")
+async def approve_contribution_plan(
+    repository_id: UUID,
+    plan_id: UUID,
+    approved: bool = Query(True),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Approves or rejects an autonomous solution plan.
+    """
+    return await contribution_service.approve_plan(db, plan_id, approved)
+
+@router.post("/{repository_id}/contributions/{contribution_id}/workspace")
+async def setup_contribution_workspace(
+    repository_id: UUID,
+    contribution_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Sets up a clean workspace and branch for a contribution.
+    """
+    client = await github_service.get_client_for_user(db, current_user)
+    workspace = await contribution_service.setup_contribution_workspace(db, contribution_id, client)
+
+    return {
+        "status": "success",
+        "workspace_id": workspace.id,
+        "path": str(workspace.path)
+    }
 
 @router.get("/{repository_id}/opportunities/{opportunity_id}")
 async def get_opportunity_details(

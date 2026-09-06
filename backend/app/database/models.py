@@ -364,6 +364,12 @@ class Contribution(Base):
         back_populates="contribution",
         cascade="all, delete-orphan"
     )
+    solution_plan: Mapped[Optional[SolutionPlan]] = relationship(
+        "SolutionPlan",
+        back_populates="contribution",
+        uselist=False,
+        cascade="all, delete-orphan"
+    )
 
 class AgentRun(Base):
     __tablename__ = "agent_runs"
@@ -490,6 +496,44 @@ class CodeReview(Base):
     )
 
     contribution: Mapped[Contribution] = relationship("Contribution", back_populates="code_reviews")
+
+class SolutionPlan(Base):
+    __tablename__ = "solution_plans"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4
+    )
+    contribution_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("contributions.id", ondelete="CASCADE"),
+        unique=True,
+        index=True
+    )
+
+    problem: Mapped[str] = mapped_column(Text)
+    root_cause: Mapped[str] = mapped_column(Text)
+    relevant_files: Mapped[List[str]] = mapped_column(JSON)
+    relevant_symbols: Mapped[List[str]] = mapped_column(JSON)
+    implementation_steps: Mapped[List[str]] = mapped_column(JSON)
+    testing_strategy: Mapped[str] = mapped_column(Text)
+    risks: Mapped[str] = mapped_column(Text)
+    expected_diff_size: Mapped[str] = mapped_column(String(50))
+    confidence: Mapped[float] = mapped_column(Float)
+    status: Mapped[str] = mapped_column(String(50), default="pending") # pending, approved, rejected
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc)
+    )
+
+    contribution: Mapped[Contribution] = relationship("Contribution", back_populates="solution_plan")
 
 class ModelRun(Base):
     __tablename__ = "model_runs"

@@ -24,7 +24,12 @@ class Workspace:
         """Removes the workspace directory and all its contents"""
         if self.path.exists():
             loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, shutil.rmtree, self.path)
+
+            def remove_readonly(func, path, excinfo):
+                os.chmod(path, 0o777)
+                func(path)
+
+            await loop.run_in_executor(None, lambda: shutil.rmtree(self.path, onerror=remove_readonly))
             logger.info(f"Cleaned up workspace at {self.path}")
 
     def get_size_mb(self) -> float:
@@ -127,6 +132,35 @@ class RepositoryService:
         except Exception as e:
             logger.error(f"Error getting commit SHA: {str(e)}")
             raise LoomError(f"Failed to get commit SHA: {str(e)}")
+
+    async def create_contribution_branch(self, workspace: Workspace, branch_name: str):
+        """
+        Creates and checks out a new branch in the workspace.
+        Ensures we start from the default branch.
+        """
+        try:
+            # 1. Create and switch to the new branch
+            cmd = ["git", "checkout", "-b", branch_name]
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                cwd=str(workspace.path),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await process.communicate()
+
+            if process.returncode != 0:
+                error_msg = stderr.decode().strip()
+                logger.error(f"Git checkout failed: {error_msg}")
+                raise LoomError(f"Failed to create branch: {error_msg}", status_code=500)
+
+            logger.info(f"Created and checked out branch {branch_name} in {workspace.path}")
+
+        except Exception as e:
+            if not isinstance(e, LoomError):
+                logger.error(f"Unexpected error creating branch: {str(e)}")
+                raise LoomError(f"Branch creation failed: {str(e)}", status_code=500)
+            raise
 
     async def discover_files(self, workspace: Workspace) -> List[Dict[str, Any]]:
         """
