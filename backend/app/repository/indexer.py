@@ -5,6 +5,7 @@ from backend.app.database import Repository, RepositoryIndex, RepositoryFile, Re
 from backend.app.repository.service import repository_service, Workspace
 from backend.app.repository.symbol_extractor import symbol_extractor
 from backend.app.repository.analyzer import repository_analyzer
+from backend.app.ai import embedding_service
 from backend.app.utils.logging import logger
 from backend.app.api.errors import LoomError
 
@@ -73,6 +74,9 @@ class RepositoryIndexer:
             files_metadata = await repository_service.discover_files(workspace)
 
             # 6. Extract symbols and persist
+            all_files = []
+            all_symbols = []
+
             for file_info in files_metadata:
                 if file_info["type"] != "file":
                     continue
@@ -84,6 +88,7 @@ class RepositoryIndexer:
                 )
                 db.add(repo_file)
                 await db.flush()
+                all_files.append(repo_file)
 
                 # Extract symbols
                 try:
@@ -104,8 +109,14 @@ class RepositoryIndexer:
                             end_column=sym["end_column"]
                         )
                         db.add(db_symbol)
+                        all_symbols.append(db_symbol)
                 except Exception as e:
                     logger.warning(f"Failed to process symbols for {file_info['path']}: {str(e)}")
+
+            # 6b. Generate Embeddings for code structure
+            logger.info(f"Generating embeddings for {len(all_files)} files and {len(all_symbols)} symbols")
+            await embedding_service.embed_files(db, all_files)
+            await embedding_service.embed_symbols(db, all_symbols)
 
             # 7. Generate AI Summary
             await repository_analyzer.update_index_summary(db, index, workspace)

@@ -3,7 +3,7 @@ from typing import List, Dict, Any, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.database import RepositoryIndex
 from backend.app.repository.service import repository_service, Workspace
-from backend.app.ai import ai_gateway, ChatRequest, ChatMessage, MessageRole, TaskType
+from backend.app.ai import ai_gateway, ChatRequest, ChatMessage, MessageRole, TaskType, embedding_service
 from backend.app.utils.logging import logger
 
 class RepositorySummary(BaseModel):
@@ -102,6 +102,9 @@ class RepositoryAnalyzer:
             index.summary = summary.model_dump()
             await db.commit()
             logger.info(f"AI summary generated and stored for index {index.id}")
+
+            # Generate embedding for the index (contextual search)
+            await embedding_service.embed_repository_index(db, index)
 
         except Exception as e:
             logger.error(f"Failed to generate repository summary: {str(e)}")

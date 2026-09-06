@@ -5,6 +5,7 @@ from typing import Optional, List, Any, Dict
 from sqlalchemy import String, Integer, DateTime, ForeignKey, Boolean, Text, JSON, Float
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
+from pgvector.sqlalchemy import Vector
 
 from backend.app.database.session import Base
 
@@ -142,6 +143,7 @@ class RepositoryIndex(Base):
     error_info: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     summary: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(768), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -176,6 +178,7 @@ class RepositoryFile(Base):
     path: Mapped[str] = mapped_column(String(1024), index=True)
     size_kb: Mapped[float] = mapped_column(Float, default=0.0)
     content_hash: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(768), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -208,6 +211,7 @@ class RepositorySymbol(Base):
     end_line: Mapped[int] = mapped_column(Integer)
     start_column: Mapped[int] = mapped_column(Integer)
     end_column: Mapped[int] = mapped_column(Integer)
+    embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(768), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -237,6 +241,7 @@ class Issue(Base):
     state: Mapped[str] = mapped_column(String(50)) # open, closed
     author: Mapped[str] = mapped_column(String(255))
     html_url: Mapped[str] = mapped_column(String(1024))
+    embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(768), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
