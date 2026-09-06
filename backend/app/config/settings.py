@@ -82,6 +82,15 @@ class Settings(BaseSettings):
     ISSUE_TEMPLATE_DIRS: List[str] = ["ISSUE_TEMPLATE", "issue_template"]
     PULL_REQUEST_TEMPLATE_VARIANTS: List[str] = ["PULL_REQUEST_TEMPLATE.md", "pull_request_template.md"]
 
+    # Sandbox Settings
+    SANDBOX_IMAGE: str = "python:3.11-slim"
+    SANDBOX_CPU_LIMIT: float = 1.0 # 1.0 CPU
+    SANDBOX_MEMORY_LIMIT: str = "512m"
+    SANDBOX_TIMEOUT: int = 600 # 10 minutes
+    SANDBOX_DISK_LIMIT: str = "1g"
+    SANDBOX_PIDS_LIMIT: int = 100
+    SANDBOX_NETWORK_MODE: str = "none" # Disallow network by default
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
