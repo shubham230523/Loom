@@ -4,6 +4,8 @@ from typing import Optional, List, Any
 from backend.app.database import get_db, User
 from backend.app.security.auth import get_current_user
 from backend.app.github.service import github_service
+from backend.app.ai import semantic_search_service
+from uuid import UUID
 
 router = APIRouter()
 
@@ -48,3 +50,22 @@ async def get_repository_details(
     )
 
     return repository
+
+@router.get("/{repository_id}/search/semantic")
+async def semantic_search(
+    repository_id: UUID,
+    q: str = Query(..., min_length=1),
+    limit: int = Query(10, ge=1, le=50),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Performs a semantic search within a specific repository.
+    """
+    results = await semantic_search_service.search(
+        db=db,
+        repository_id=repository_id,
+        query=q,
+        limit=limit
+    )
+    return results
