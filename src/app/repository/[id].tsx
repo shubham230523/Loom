@@ -1,5 +1,5 @@
 import { useLocalSearchParams, Stack, useRouter } from 'expo-router';
-import { View, Image, Linking } from 'react-native';
+import { View, Image, Linking, Pressable, Alert } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { SymbolView } from 'expo-symbols';
 import { ScreenContainer } from '@/components/ui/screen-container';
@@ -27,6 +27,10 @@ export default function RepositoryDetailsScreen() {
     queryKey: ['repository', id],
     queryFn: () => RepositoryService.getById(id!),
     enabled: !!id,
+    refetchInterval: (data) => {
+      // Poll if indexing is in progress
+      return data?.indexing_status === 'in_progress' ? 3000 : false;
+    }
   });
 
   const loomId = repo?.loom_id; // This will be the UUID if imported
@@ -41,8 +45,13 @@ export default function RepositoryDetailsScreen() {
   // 3. Discovery Mutation
   const discoverMutation = useMutation({
     mutationFn: () => OpportunityService.discover(loomId!),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['opportunities', loomId] });
+    onSuccess: (data) => {
+      if (data.status === 'indexing') {
+        // Trigger a refetch to start polling for indexing status
+        refetchRepo();
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['opportunities', loomId] });
+      }
     },
   });
 
@@ -70,9 +79,16 @@ export default function RepositoryDetailsScreen() {
   };
 
   const handleDiscover = () => {
+    console.log('Discover pressed. is_imported:', repo?.is_imported, 'loomId:', loomId);
     if (!repo?.is_imported) {
+      console.log('Importing repository first...');
       initializeMutation.mutate();
     } else {
+      if (!loomId) {
+        console.error('Loom ID is missing for an imported repository!');
+        return;
+      }
+      console.log('Triggering discovery mutation...');
       discoverMutation.mutate();
     }
   };
@@ -111,7 +127,23 @@ export default function RepositoryDetailsScreen() {
 
   return (
     <ScreenContainer scrollable className="py-6">
-      <Stack.Screen options={{ title: repo.name, headerTitleAlign: 'center' }} />
+      <Stack.Screen options={{ title: repo?.name || 'Repository', headerShown: false }} />
+
+      {/* Custom Header with Back Button */}
+      <View className="flex-row items-center px-4 mb-6">
+        <Pressable
+          onPress={() => {
+            console.log('Back pressed');
+            router.back();
+          }}
+          className="w-10 h-10 items-center justify-center rounded-full bg-muted active:bg-muted/80"
+        >
+          <Text style={{ color: theme.text, fontSize: 24, fontWeight: 'bold' }}>←</Text>
+        </Pressable>
+        <View className="flex-1 items-center mr-10">
+          <Text weight="bold" className="text-lg">{repo?.name}</Text>
+        </View>
+      </View>
 
       {/* Header Section */}
       <View className="items-center mb-8 px-4">
@@ -123,7 +155,9 @@ export default function RepositoryDetailsScreen() {
               resizeMode="cover"
             />
           ) : (
-            <SymbolView name="person.circle.fill" size={40} tintColor={theme.textSecondary} />
+            <View className="items-center justify-center">
+              <Text className="text-4xl">👤</Text>
+            </View>
           )}
         </View>
         <Text variant="title" className="text-3xl font-bold mb-1 text-center">{repo?.name || 'Loading...'}</Text>
@@ -136,24 +170,31 @@ export default function RepositoryDetailsScreen() {
           <Button
             className="flex-1"
             variant={repo.is_imported ? "default" : "secondary"}
+            loading={initializeMutation.isPending || discoverMutation.isPending}
             label={
-              initializeMutation.isPending
-                ? "Adding to Loom..."
-                : discoverMutation.isPending
-                  ? "Discovering..."
-                  : repo.is_imported
-                    ? "Discover Opportunities"
-                    : "Add to Loom"
+              repo.indexing_status === 'in_progress'
+                ? "Analyzing Codebase..."
+                : initializeMutation.isPending
+                  ? "Adding to Loom..."
+                  : discoverMutation.isPending
+                    ? "Discovering..."
+                    : repo.is_imported
+                      ? "Discover Opportunities"
+                      : "Add to Loom"
             }
             onPress={handleDiscover}
-            disabled={discoverMutation.isPending || initializeMutation.isPending}
+            disabled={
+              discoverMutation.isPending ||
+              initializeMutation.isPending ||
+              repo.indexing_status === 'in_progress'
+            }
           />
           <Button
             variant="outline"
             className="px-4"
             onPress={handleOpenGitHub}
           >
-            <SymbolView name="link" size={20} tintColor={theme.text} />
+            <Text className="text-xl">🔗</Text>
           </Button>
         </View>
 
@@ -169,11 +210,11 @@ export default function RepositoryDetailsScreen() {
             <View className="flex-row gap-4 flex-wrap">
               <Badge label={repo?.language || 'Unknown'} variant="secondary" />
               <View className="flex-row items-center gap-1">
-                <SymbolView name="star.fill" size={12} tintColor="#EAB308" />
+                <Text>⭐</Text>
                 <Text variant="small" className="text-muted-foreground">{(repo?.stargazers_count || 0).toLocaleString()}</Text>
               </View>
               <View className="flex-row items-center gap-1">
-                <SymbolView name="arrow.branch" size={12} tintColor={theme.textSecondary} />
+                <Text>🍴</Text>
                 <Text variant="small" className="text-muted-foreground">{(repo?.forks_count || 0).toLocaleString()}</Text>
               </View>
             </View>
@@ -189,7 +230,7 @@ export default function RepositoryDetailsScreen() {
 
           {!opportunities || opportunities.length === 0 ? (
             <Card className="items-center py-12 px-6">
-              <SymbolView name="sparkles" size={32} tintColor={theme.textSecondary} className="mb-4" />
+              <Text className="text-3xl mb-4">✨</Text>
               <Text weight="medium" className="mb-2">No opportunities yet</Text>
               <Text variant="small" className="text-muted-foreground text-center">
                 Tap 'Discover Opportunities' to let Loom analyze this project and find tasks.

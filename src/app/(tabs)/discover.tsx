@@ -58,13 +58,13 @@ export default function DiscoverScreen() {
             <Badge variant="outline" label={item.language} />
           )}
           <View className="flex-row items-center gap-1">
-            <SymbolView name="star.fill" size={12} tintColor="#EAB308" />
+            <Text style={{ fontSize: 12 }}>⭐</Text>
             <Text variant="small" className="text-muted-foreground">
               {(item.stargazers_count / 1000).toFixed(1)}k
             </Text>
           </View>
           <View className="flex-row items-center gap-1">
-            <SymbolView name="arrow.branch" size={12} tintColor={theme.textSecondary} />
+            <Text style={{ fontSize: 12 }}>🍴</Text>
             <Text variant="small" className="text-muted-foreground">
               {item.forks_count}
             </Text>
@@ -130,11 +130,7 @@ export default function DiscoverScreen() {
             value={searchQuery}
             onChangeText={handleSearch}
             leftIcon={
-              <SymbolView
-                name="magnifyingglass"
-                size={18}
-                tintColor={theme.textSecondary}
-              />
+              <Text style={{ fontSize: 18, marginLeft: 8 }}>🔍</Text>
             }
           />
         </View>
@@ -142,11 +138,7 @@ export default function DiscoverScreen() {
           className="h-12 w-12 items-center justify-center rounded-lg border border-border bg-card active:opacity-70"
           onPress={() => console.log('Filter pressed')}
         >
-          <SymbolView
-            name="line.3.horizontal.decrease.circle"
-            size={22}
-            tintColor={theme.text}
-          />
+          <Text style={{ fontSize: 22 }}>⚙️</Text>
         </Pressable>
       </View>
 

@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, Query, HTTPException, status
+from fastapi import APIRouter, Depends, Query, HTTPException, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, desc
 from sqlalchemy.orm import selectinload
 from typing import Optional, List, Any
 from uuid import UUID
@@ -13,8 +13,10 @@ from backend.app.repository.issue_service import issue_service
 from backend.app.repository.pr_service import pr_service
 from backend.app.repository.opportunity_service import opportunity_service
 from backend.app.repository.contribution_service import contribution_service
+from backend.app.repository.indexer import repository_indexer
 from backend.app.agents.issue_analyzer import issue_analyzer_agent
 from backend.app.agents.conflict_detector import conflict_detector_agent
+from backend.app.utils.logging import logger
 
 router = APIRouter()
 
@@ -63,21 +65,39 @@ async def get_repository_details(
             pass
 
     if repo:
-        # Check if user has an avatar URL from the latest user profile (approximation)
-        # In a real app, we might store owner_avatar_url in the Repository model
-        return {
-            "id": repo.github_repo_id,
-            "loom_id": str(repo.id),
-            "name": repo.name,
-            "full_name": repo.full_name,
-            "description": repo.description,
-            "html_url": repo.html_url,
-            "language": repo.language,
-            "stargazers_count": repo.stargazers_count,
-            "forks_count": repo.forks_count,
-            "owner": {"login": repo.owner, "avatar_url": None},
-            "is_imported": True
-        }
+        # Get latest index status
+        index_query = select(RepositoryIndex).where(
+            RepositoryIndex.repository_id == repo.id
+        ).order_by(desc(RepositoryIndex.created_at)).limit(1)
+        index_result = await db.execute(index_query)
+        latest_index = index_result.scalar_one_or_none()
+
+        # Fetch fresh metadata from GitHub to ensure stars/avatar are current
+        client = await github_service.get_client_for_user(db, current_user)
+        try:
+            gh_repo = await github_service.get_repository(client, repo.github_repo_id)
+            return {
+                **gh_repo,
+                "loom_id": str(repo.id),
+                "is_imported": True,
+                "indexing_status": latest_index.status if latest_index else "not_started"
+            }
+        except Exception:
+            # Fallback to DB data if GitHub fails
+            return {
+                "id": repo.github_repo_id,
+                "loom_id": str(repo.id),
+                "name": repo.name,
+                "full_name": repo.full_name,
+                "description": repo.description,
+                "html_url": repo.html_url,
+                "language": repo.language,
+                "stargazers_count": repo.stargazers_count,
+                "forks_count": repo.forks_count,
+                "owner": {"login": repo.owner, "avatar_url": None},
+                "is_imported": True,
+                "indexing_status": latest_index.status if latest_index else "not_started"
+            }
 
     # 3. Fallback: Fetch from GitHub directly
     try:
@@ -87,42 +107,67 @@ async def get_repository_details(
         return {
             **gh_repo,
             "loom_id": None,
-            "is_imported": False
+            "is_imported": False,
+            "indexing_status": "not_started"
         }
     except Exception:
         raise HTTPException(status_code=404, detail="Repository not found")
 
 @router.post("/initialize")
 async def initialize_repository(
+    background_tasks: BackgroundTasks,
     github_id: int = Query(...),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Imports a repository into the local database."""
+    """Imports a repository into the local database and starts indexing."""
     query = select(Repository).where(Repository.github_repo_id == github_id)
     result = await db.execute(query)
-    existing = result.scalar_one_or_none()
-    if existing: return existing
+    repo = result.scalar_one_or_none()
 
     client = await github_service.get_client_for_user(db, current_user)
-    gh_repo = await github_service.get_repository(client, github_id)
 
-    new_repo = Repository(
-        github_repo_id=github_id,
-        owner=gh_repo["owner"]["login"],
-        name=gh_repo["name"],
-        full_name=gh_repo["full_name"],
-        html_url=gh_repo["html_url"],
-        description=gh_repo.get("description"),
-        default_branch=gh_repo.get("default_branch", "main"),
-        language=gh_repo.get("language"),
-        stargazers_count=gh_repo.get("stargazers_count", 0),
-        forks_count=gh_repo.get("forks_count", 0)
+    if not repo:
+        gh_repo = await github_service.get_repository(client, github_id)
+        repo = Repository(
+            github_repo_id=github_id,
+            owner=gh_repo["owner"]["login"],
+            name=gh_repo["name"],
+            full_name=gh_repo["full_name"],
+            html_url=gh_repo["html_url"],
+            description=gh_repo.get("description"),
+            default_branch=gh_repo.get("default_branch", "main"),
+            language=gh_repo.get("language"),
+            stargazers_count=gh_repo.get("stargazers_count", 0),
+            forks_count=gh_repo.get("forks_count", 0)
+        )
+        db.add(repo)
+        await db.commit()
+        await db.refresh(repo)
+
+    # Start indexing in background
+    background_tasks.add_task(
+        run_indexing,
+        str(repo.id),
+        client.access_token
     )
-    db.add(new_repo)
-    await db.commit()
-    await db.refresh(new_repo)
-    return new_repo
+
+    return repo
+
+# Fix background task db session handling
+from backend.app.database.session import SessionLocal
+
+async def run_indexing(repo_id: str, access_token: str):
+    """Background task for repository indexing"""
+    logger.info(f"Starting background indexing for repository {repo_id}")
+    async with SessionLocal() as db:
+        try:
+            query = select(Repository).where(Repository.id == UUID(repo_id))
+            repo = (await db.execute(query)).scalar_one_or_none()
+            if repo:
+                await repository_indexer.index_repository(db, repo, access_token)
+        except Exception as e:
+            logger.error(f"Background indexing failed for {repo_id}: {str(e)}")
 
 @router.get("/{repository_id}/opportunities")
 async def get_opportunities(
@@ -136,16 +181,39 @@ async def get_opportunities(
 @router.post("/{repository_id}/opportunities/discover")
 async def discover_opportunities(
     repository_id: UUID,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Triggers autonomous discovery of opportunities."""
+    """Triggers autonomous discovery of opportunities. Indexes first if needed."""
     query = select(Repository).where(Repository.id == repository_id)
     result = await db.execute(query)
     repo = result.scalar_one_or_none()
     if not repo: raise HTTPException(status_code=404, detail="Repository not found")
 
     client = await github_service.get_client_for_user(db, current_user)
+
+    # 1. Check for index
+    index_query = select(RepositoryIndex).where(
+        RepositoryIndex.repository_id == repo.id,
+        RepositoryIndex.status == "completed"
+    )
+    index = (await db.execute(index_query)).scalar_one_or_none()
+
+    if not index:
+        # Check if indexing is already in progress
+        active_index_query = select(RepositoryIndex).where(
+            RepositoryIndex.repository_id == repo.id,
+            RepositoryIndex.status == "in_progress"
+        )
+        active_index = (await db.execute(active_index_query)).scalar_one_or_none()
+
+        if not active_index:
+            logger.info(f"Triggering on-demand indexing for {repo.full_name}")
+            background_tasks.add_task(run_indexing, str(repo.id), client.access_token)
+
+        return {"status": "indexing", "message": "Repository is being indexed. Discovery will start automatically after indexing."}
+
     count = await opportunity_service.discover_and_persist_opportunities(db, repo, client)
     return {"status": "success", "new_opportunities_count": count}
 

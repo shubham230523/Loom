@@ -46,5 +46,8 @@
     "web": "expo start --web",
     "lint": "expo lint"
   },
-  "private": true
+  "private": true,
+  "overrides": {
+    "react-native-css-interop": "0.1.21"
+  }
 }
