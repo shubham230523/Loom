@@ -30,12 +30,13 @@ export default function RootLayout() {
   useEffect(() => {
     if (isLoading) return;
 
-    const inAuthGroup = segments[0] === '(tabs)';
+    const inAuthGroup = segments[0] === '(tabs)' || segments[0] === 'repository' || segments[0] === 'contribution' || segments[0] === 'settings';
+    const isPublicScreen = segments[0] === 'welcome' || segments[0] === undefined || segments[0] === '(index)';
 
-    if (isAuthenticated && !inAuthGroup) {
+    if (isAuthenticated && isPublicScreen) {
       // Redirect to home if logged in and trying to access landing/auth screens
       router.replace('/(tabs)/home');
-    } else if (!isAuthenticated && inAuthGroup) {
+    } else if (!isAuthenticated && !isPublicScreen) {
       // Redirect to welcome if not logged in and trying to access protected screens
       router.replace('/welcome');
     }

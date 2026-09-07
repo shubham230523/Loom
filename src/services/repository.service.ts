@@ -9,8 +9,15 @@ export class RepositoryService {
     return data;
   }
 
-  static async getById(id: number): Promise<GitHubRepository> {
-    const { data } = await apiClient.get<GitHubRepository>(`/api/v1/repositories/${id}`);
+  static async getById(id: string): Promise<GitHubRepository & { loom_id: string | null; is_imported: boolean }> {
+    const { data } = await apiClient.get(`/api/v1/repositories/${id}`);
+    return data;
+  }
+
+  static async initialize(githubId: number): Promise<GitHubRepository & { id: string }> {
+    const { data } = await apiClient.post('/api/v1/repositories/initialize', null, {
+      params: { github_id: githubId },
+    });
     return data;
   }
 }

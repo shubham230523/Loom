@@ -25,30 +25,41 @@ export default function RepositoryDetailsScreen() {
   // 1. Fetch Repository Metadata
   const { data: repo, isLoading: isRepoLoading, isError: isRepoError, error: repoError, refetch: refetchRepo } = useQuery({
     queryKey: ['repository', id],
-    queryFn: () => RepositoryService.getById(Number(id)),
+    queryFn: () => RepositoryService.getById(id!),
     enabled: !!id,
   });
 
-  // 2. Fetch Opportunities
+  const loomId = repo?.loom_id; // This will be the UUID if imported
+
+  // 2. Fetch Opportunities (only if imported)
   const { data: opportunities, isLoading: isOppsLoading } = useQuery({
-    queryKey: ['opportunities', id],
-    queryFn: () => OpportunityService.list(id!),
-    enabled: !!id,
+    queryKey: ['opportunities', loomId],
+    queryFn: () => OpportunityService.list(loomId!),
+    enabled: !!loomId,
   });
 
   // 3. Discovery Mutation
   const discoverMutation = useMutation({
-    mutationFn: () => OpportunityService.discover(id!),
+    mutationFn: () => OpportunityService.discover(loomId!),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['opportunities', id] });
+      queryClient.invalidateQueries({ queryKey: ['opportunities', loomId] });
     },
   });
 
   // 4. Scoring Mutation
   const scoreMutation = useMutation({
-    mutationFn: (oppId: string) => OpportunityService.score(id!, oppId),
+    mutationFn: (oppId: string) => OpportunityService.score(loomId!, oppId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['opportunities', id] });
+      queryClient.invalidateQueries({ queryKey: ['opportunities', loomId] });
+    },
+  });
+
+  // 5. Initialize Mutation
+  const initializeMutation = useMutation({
+    mutationFn: () => RepositoryService.initialize(repo!.id),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['repository', id], { ...repo, ...data, is_imported: true });
+      queryClient.invalidateQueries({ queryKey: ['repository', id] });
     },
   });
 
@@ -59,7 +70,11 @@ export default function RepositoryDetailsScreen() {
   };
 
   const handleDiscover = () => {
-    discoverMutation.mutate();
+    if (!repo?.is_imported) {
+      initializeMutation.mutate();
+    } else {
+      discoverMutation.mutate();
+    }
   };
 
   const handleAnalyzeOpportunity = (oppId: string) => {
@@ -68,10 +83,10 @@ export default function RepositoryDetailsScreen() {
 
   const handleStartContribution = async (oppId: string) => {
     try {
-      const contribution = await ContributionService.start(id!, oppId);
+      const contribution = await ContributionService.start(loomId!, oppId);
       router.push({
         pathname: '/contribution/[id]/plan',
-        params: { id: contribution.id, repositoryId: id }
+        params: { id: contribution.id, repositoryId: loomId! }
       });
     } catch (error) {
       console.error('Failed to start contribution:', error);
@@ -101,14 +116,18 @@ export default function RepositoryDetailsScreen() {
       {/* Header Section */}
       <View className="items-center mb-8 px-4">
         <View className="w-20 h-20 rounded-2xl bg-muted items-center justify-center mb-4 border border-border overflow-hidden">
-          <Image
-            source={{ uri: repo.owner.avatar_url }}
-            className="w-full h-full"
-            resizeMode="cover"
-          />
+          {repo?.owner?.avatar_url ? (
+            <Image
+              source={{ uri: repo.owner.avatar_url }}
+              className="w-full h-full"
+              resizeMode="cover"
+            />
+          ) : (
+            <SymbolView name="person.circle.fill" size={40} tintColor={theme.textSecondary} />
+          )}
         </View>
-        <Text variant="title" className="text-3xl font-bold mb-1 text-center">{repo.name}</Text>
-        <Text variant="muted" className="text-lg">by {repo.owner.login}</Text>
+        <Text variant="title" className="text-3xl font-bold mb-1 text-center">{repo?.name || 'Loading...'}</Text>
+        <Text variant="muted" className="text-lg">by {repo?.owner?.login || '...'}</Text>
       </View>
 
       <View className="gap-6 px-4">
@@ -116,10 +135,18 @@ export default function RepositoryDetailsScreen() {
         <View className="flex-row gap-4">
           <Button
             className="flex-1"
-            variant="default"
-            label={discoverMutation.isPending ? "Discovering..." : "Discover Opportunities"}
+            variant={repo.is_imported ? "default" : "secondary"}
+            label={
+              initializeMutation.isPending
+                ? "Adding to Loom..."
+                : discoverMutation.isPending
+                  ? "Discovering..."
+                  : repo.is_imported
+                    ? "Discover Opportunities"
+                    : "Add to Loom"
+            }
             onPress={handleDiscover}
-            disabled={discoverMutation.isPending}
+            disabled={discoverMutation.isPending || initializeMutation.isPending}
           />
           <Button
             variant="outline"
@@ -137,17 +164,17 @@ export default function RepositoryDetailsScreen() {
           </CardHeader>
           <CardContent>
             <Text className="text-muted-foreground leading-6 mb-4">
-              {repo.description || 'No description provided.'}
+              {repo?.description || 'No description provided.'}
             </Text>
             <View className="flex-row gap-4 flex-wrap">
-              <Badge label={repo.language || 'Unknown'} variant="secondary" />
+              <Badge label={repo?.language || 'Unknown'} variant="secondary" />
               <View className="flex-row items-center gap-1">
                 <SymbolView name="star.fill" size={12} tintColor="#EAB308" />
-                <Text variant="small" className="text-muted-foreground">{repo.stargazers_count.toLocaleString()}</Text>
+                <Text variant="small" className="text-muted-foreground">{(repo?.stargazers_count || 0).toLocaleString()}</Text>
               </View>
               <View className="flex-row items-center gap-1">
                 <SymbolView name="arrow.branch" size={12} tintColor={theme.textSecondary} />
-                <Text variant="small" className="text-muted-foreground">{repo.forks_count.toLocaleString()}</Text>
+                <Text variant="small" className="text-muted-foreground">{(repo?.forks_count || 0).toLocaleString()}</Text>
               </View>
             </View>
           </CardContent>

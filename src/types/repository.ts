@@ -1,5 +1,6 @@
 export interface GitHubRepository {
-  id: number;
+  id: number; // GitHub Integer ID
+  loom_id?: string | null; // Loom UUID (optional/nullable)
   name: string;
   full_name: string;
   owner: {
@@ -13,6 +14,7 @@ export interface GitHubRepository {
   language: string | null;
   default_branch: string;
   updated_at: string;
+  is_imported?: boolean;
 }
 
 export interface SearchRepositoriesResponse {
