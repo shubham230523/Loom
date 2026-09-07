@@ -36,6 +36,7 @@ export class AuthService {
 
           await store.setToken(authData.access_token);
           store.setUser(authData.user);
+          store.setLoading(false);
         } else {
           throw new Error('Authentication cancelled or failed');
         }

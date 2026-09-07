@@ -9,7 +9,7 @@ def get_ai_provider() -> AIProvider:
     """
     Factory function to get the configured AI provider.
     """
-    if settings.AI_PROVIDER == "ollama-cloud":
+    if settings.AI_PROVIDER in ["ollama-cloud", "loom-cloud"]:
         return OllamaCloudProvider()
     elif settings.AI_PROVIDER == "openrouter":
         return OpenRouterProvider()

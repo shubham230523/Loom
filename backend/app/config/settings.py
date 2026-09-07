@@ -32,7 +32,17 @@ class Settings(BaseSettings):
     GITHUB_TOKEN_URL: str = "https://github.com/login/oauth/access_token"
     GITHUB_AUTHORIZE_URL: str = "https://github.com/login/oauth/authorize"
 
-    @field_validator("GITHUB_CLIENT_SECRET", "GITHUB_PRIVATE_KEY", "GITHUB_WEBHOOK_SECRET")
+    @field_validator(
+        "GITHUB_CLIENT_ID",
+        "GITHUB_CLIENT_SECRET",
+        "GITHUB_PRIVATE_KEY",
+        "GITHUB_WEBHOOK_SECRET",
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "LOOM_CLOUD_API_KEY",
+        "OPENROUTER_API_KEY",
+        "GEMINI_API_KEY"
+    )
     @classmethod
     def validate_secrets(cls, v: Optional[str]) -> Optional[str]:
         if v == "":
@@ -47,7 +57,7 @@ class Settings(BaseSettings):
         return v
 
     # AI Provider Configuration
-    AI_PROVIDER: str = "ollama-cloud"  # openai, anthropic, loom-cloud, ollama-cloud, openrouter, gemini
+    AI_PROVIDER: str = "openrouter"  # openai, anthropic, loom-cloud, ollama-cloud, openrouter, gemini
     OPENAI_API_KEY: Optional[str] = None
     ANTHROPIC_API_KEY: Optional[str] = None
     LOOM_CLOUD_API_KEY: Optional[str] = None
@@ -112,7 +122,7 @@ class Settings(BaseSettings):
     SANDBOX_NETWORK_MODE: str = "none" # Disallow network by default
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=[".env", "backend/.env"],
         env_file_encoding="utf-8",
         case_sensitive=True,
         extra="ignore"
