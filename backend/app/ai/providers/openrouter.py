@@ -172,7 +172,8 @@ class OpenRouterProvider(AIProvider):
 
         payload = {
             "model": request.model or "openai/text-embedding-3-small",
-            "input": request.input
+            "input": request.input,
+            "dimensions": 768 # Force 768 to match DB schema
         }
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:

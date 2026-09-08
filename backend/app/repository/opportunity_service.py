@@ -31,9 +31,9 @@ class OpportunityService:
         query = select(RepositoryIndex).where(
             RepositoryIndex.repository_id == repository.id,
             RepositoryIndex.status == "completed"
-        ).order_by(RepositoryIndex.created_at.desc())
+        ).order_by(RepositoryIndex.created_at.desc()).limit(1)
         result = await db.execute(query)
-        index = result.scalar_one_or_none()
+        index = result.scalars().first()
 
         if not index:
             logger.warning(f"OpportunityService: No completed index found for {repository.full_name}.")

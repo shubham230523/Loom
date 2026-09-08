@@ -1,0 +1,37 @@
+# Cursor Rules for AI Coding Assistant
+
+## General Principles
+- Be concise and prioritize readability.
+- Use idiomatic patterns for the language in use.
+- Prefer functional programming patterns where appropriate.
+- Always include types/interfaces; avoid `any` or `dynamic`.
+
+---
+
+## TypeScript / JavaScript
+- **Standard:** Use strict TypeScript. No `any`.
+- **Patterns:** Prefer `const` over `let`. Use arrow functions for callbacks.
+- **Async:** Use `async/await` over raw promises.
+- **Styling:** Follow ESLint/Prettier defaults unless otherwise specified.
+
+---
+
+## Kotlin / Android
+- **Language:** Use idiomatic Kotlin (standard library functions like `apply`, `also`, `let`).
+- **Compose:** Prefer Jetpack Compose for UI. Follow Material 3 guidelines.
+- **Architecture:** Default to MVVM/MVI. Use `StateFlow` and `SharedFlow`.
+- **Coroutines:** Always specify the `CoroutineDispatcher` (e.g., `Dispatchers.IO`).
+
+---
+
+## Rust
+- **Safety:** Prioritize memory safety and ownership principles.
+- **Errors:** Use `Result` and `Option` for error handling. Avoid `unwrap()` and `expect()` unless in tests.
+- **Traits:** Prefer trait-based abstraction over macros where possible.
+- **Performance:** Be mindful of allocations; use `&str` over `String` where appropriate.
+
+---
+
+## Instructions
+- When writing tests, use the standard library for the language (e.g., JUnit for Kotlin, `cargo test` for Rust, Jest for TS).
+- If a suggested library is older than 2023, check for a modern alternative.

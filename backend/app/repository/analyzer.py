@@ -7,11 +7,31 @@ from backend.app.ai import ai_gateway, ChatRequest, ChatMessage, MessageRole, Ta
 from backend.app.utils.logging import logger
 
 class RepositorySummary(BaseModel):
-    architecture_summary: str = Field(description="High-level overview of the project architecture")
-    important_modules: List[str] = Field(description="List of key directories or files and their roles")
-    technology_summary: str = Field(description="Summary of languages, frameworks, and tools used")
-    development_workflow: str = Field(description="Instructions or inferred steps for local development")
-    testing_workflow: str = Field(description="Instructions or inferred steps for running tests")
+    architecture_summary: str = Field(
+        description="High-level overview of the project architecture",
+        validation_alias="description"
+    )
+    important_modules: List[str] = Field(
+        description="List of key directories or files and their roles",
+        validation_alias="directories"
+    )
+    technology_summary: str = Field(
+        description="Summary of languages, frameworks, and tools used",
+        validation_alias="primary_language"
+    )
+    development_workflow: str = Field(
+        description="Instructions or inferred steps for local development",
+        default="Not specified"
+    )
+    testing_workflow: str = Field(
+        description="Instructions or inferred steps for running tests",
+        default="Not specified"
+    )
+
+    model_config = {
+        "populate_by_name": True,
+        "extra": "ignore"
+    }
 
 class RepositoryAnalyzer:
     async def generate_summary(
@@ -62,6 +82,12 @@ class RepositoryAnalyzer:
         {context}
 
         Your summary must be accurate, concise, and professional.
+        YOU MUST RETURN A JSON OBJECT WITH THESE EXACT KEYS:
+        - "architecture_summary": A string.
+        - "important_modules": A list of strings.
+        - "technology_summary": A string.
+        - "development_workflow": A string.
+        - "testing_workflow": A string.
         """
 
         # 2. Call AI Gateway

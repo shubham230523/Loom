@@ -627,7 +627,7 @@ class RepositoryService:
         }
 
         # Extensions to scan
-        valid_extensions = {".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".kt"}
+        valid_extensions = {".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".kt", ".md", ".markdown"}
 
         for root, dirs, files in os.walk(path):
             # Skip ignored dirs

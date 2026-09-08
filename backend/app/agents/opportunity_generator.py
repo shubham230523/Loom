@@ -87,9 +87,14 @@ class OpportunityGeneratorAgent:
         INSTRUCTIONS:
         1. Analyze these signals and find the top 5 most actionable opportunities.
         2. DO NOT invent work. Every opportunity must be linked to an actual issue, TODO, gap, or unimplemented function.
-        3. Prioritize "low-hanging fruit" and "high-impact technical debt".
-        4. Be technically specific in the description.
-        5. If NO actionable signals are found, return an empty list for the "opportunities" field. Do NOT return other fields instead.
+           NOTE: For documentation repositories (like guides or playbooks), a TODO or a missing section in a sequential guide is a valid signal.
+        3. If no explicit TODOs or issues exist, suggest standard project high-impact improvements such as:
+           - Creating a CONTRIBUTING.md or LICENSE if missing.
+           - Improving README structure for better onboarding.
+           - Suggesting a new section or chapter based on the existing repository patterns.
+        4. Prioritize "low-hanging fruit" and "high-impact technical debt".
+        5. Be technically specific in the description.
+        6. If NO actionable signals OR obvious project improvements are found, return an empty list for the "opportunities" field. Do NOT return other fields instead.
         """
 
         logger.info(f"OpportunityGeneratorAgent: Final prompt context summary: Issues={len(issues)}, Signals={len(code_signals)}, Gaps={len(test_gaps)}")
