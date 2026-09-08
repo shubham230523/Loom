@@ -80,16 +80,12 @@ export default function RepositoryDetailsScreen() {
   };
 
   const handleDiscover = () => {
-    console.log('Discover pressed. is_imported:', repo?.is_imported, 'loomId:', loomId);
     if (!repo?.is_imported) {
-      console.log('Importing repository first...');
       initializeMutation.mutate();
     } else {
       if (!loomId) {
-        console.error('Loom ID is missing for an imported repository!');
         return;
       }
-      console.log('Triggering discovery mutation...');
       discoverMutation.mutate();
     }
   };
@@ -134,7 +130,6 @@ export default function RepositoryDetailsScreen() {
       <View className="flex-row items-center px-4 mb-6">
         <Pressable
           onPress={() => {
-            console.log('Back pressed');
             router.back();
           }}
           className="w-10 h-10 items-center justify-center rounded-full bg-slate-200 active:bg-slate-300"
