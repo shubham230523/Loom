@@ -5,7 +5,7 @@ import uuid
 import re
 import json
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from backend.app.config import settings
 from backend.app.api.errors import LoomError
 from backend.app.utils.logging import logger
@@ -44,6 +44,39 @@ class Workspace:
         return total_size / (1024 * 1024)
 
 class RepositoryService:
+    async def _run_git_command(self, cmd: List[str], cwd: Optional[Path] = None) -> Tuple[int, str, str]:
+        """
+        Runs a git command using asyncio.create_subprocess_exec with a fallback
+        to synchronous execution if the loop doesn't support subprocesses (Windows issue).
+        """
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                cwd=str(cwd) if cwd else None,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await process.communicate()
+            return process.returncode, stdout.decode().strip(), stderr.decode().strip()
+        except NotImplementedError:
+            # Fallback for Windows SelectorEventLoop
+            logger.info(f"Falling back to synchronous execution for command: {' '.join(cmd)}")
+            import subprocess
+            loop = asyncio.get_running_loop()
+
+            def run_sync():
+                p = subprocess.Popen(
+                    cmd,
+                    cwd=str(cwd) if cwd else None,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+                stdout, stderr = p.communicate()
+                return p.returncode, stdout.strip(), stderr.strip()
+
+            return await loop.run_in_executor(None, run_sync)
+
     async def clone_repository(
         self,
         repo_url: str,
@@ -56,13 +89,11 @@ class RepositoryService:
         await workspace.create()
 
         # Use token in URL for authentication if provided
-        # Format: https://<token>@github.com/owner/repo.git
         if access_token:
             authenticated_url = repo_url.replace("https://", f"https://{access_token}@")
         else:
             authenticated_url = repo_url
 
-        # Build git clone command with shallow clone for performance/size
         cmd = [
             "git", "clone",
             "--depth", "1",
@@ -72,50 +103,41 @@ class RepositoryService:
         ]
 
         try:
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+            # We use wait_for only for the async path if we wanted to,
+            # but _run_git_command handles the logic.
+            # To apply timeout we'll wrap the call.
+
+            returncode, stdout, stderr = await asyncio.wait_for(
+                self._run_git_command(cmd),
+                timeout=settings.CLONE_TIMEOUT_SECONDS
             )
 
-            try:
-                # Enforce timeout
-                stdout, stderr = await asyncio.wait_for(
-                    process.communicate(),
-                    timeout=settings.CLONE_TIMEOUT_SECONDS
+            if returncode != 0:
+                logger.error(f"Git clone failed: {stderr}")
+                raise LoomError(f"Failed to clone repository: {stderr}", status_code=500)
+
+            # Check size limits
+            size_mb = workspace.get_size_mb()
+            if size_mb > settings.MAX_REPO_SIZE_MB:
+                logger.warning(f"Repository size {size_mb}MB exceeds limit {settings.MAX_REPO_SIZE_MB}MB")
+                await workspace.cleanup()
+                raise LoomError(
+                    f"Repository too large ({round(size_mb, 2)}MB). Limit is {settings.MAX_REPO_SIZE_MB}MB.",
+                    status_code=413
                 )
 
-                if process.returncode != 0:
-                    error_msg = stderr.decode().strip()
-                    logger.error(f"Git clone failed: {error_msg}")
-                    raise LoomError(f"Failed to clone repository: {error_msg}", status_code=500)
+            logger.info(f"Successfully cloned repository into {workspace.path} ({round(size_mb, 2)}MB)")
+            return workspace.path
 
-                # Check size limits
-                size_mb = workspace.get_size_mb()
-                if size_mb > settings.MAX_REPO_SIZE_MB:
-                    logger.warning(f"Repository size {size_mb}MB exceeds limit {settings.MAX_REPO_SIZE_MB}MB")
-                    await workspace.cleanup()
-                    raise LoomError(
-                        f"Repository too large ({round(size_mb, 2)}MB). Limit is {settings.MAX_REPO_SIZE_MB}MB.",
-                        status_code=413
-                    )
-
-                logger.info(f"Successfully cloned repository into {workspace.path} ({round(size_mb, 2)}MB)")
-                return workspace.path
-
-            except asyncio.TimeoutError:
-                process.kill()
-                await workspace.cleanup()
-                logger.error(f"Git clone timed out after {settings.CLONE_TIMEOUT_SECONDS}s")
-                raise LoomError("Repository clone timed out", status_code=504)
-
+        except asyncio.TimeoutError:
+            logger.error(f"Git clone timed out after {settings.CLONE_TIMEOUT_SECONDS}s")
+            await workspace.cleanup()
+            raise LoomError("Repository clone timed out", status_code=504)
         except Exception as e:
             if not isinstance(e, LoomError):
-                import traceback
-                error_details = traceback.format_exc()
-                logger.error(f"Unexpected error during clone: {str(e)}\n{error_details}")
+                logger.error(f"Unexpected error during clone: {str(e)}", exc_info=True)
                 await workspace.cleanup()
-                raise LoomError(f"Repository clone failed: {str(e) or type(e).__name__}", status_code=500)
+                raise LoomError(f"Repository clone failed: {str(e)}", status_code=500)
             raise
 
     async def get_current_commit_sha(self, workspace: Workspace) -> str:
@@ -124,16 +146,10 @@ class RepositoryService:
         """
         cmd = ["git", "rev-parse", "HEAD"]
         try:
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                cwd=str(workspace.path),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            stdout, stderr = await process.communicate()
-            if process.returncode != 0:
-                raise LoomError(f"Failed to get commit SHA: {stderr.decode().strip()}")
-            return stdout.decode().strip()
+            returncode, stdout, stderr = await self._run_git_command(cmd, cwd=workspace.path)
+            if returncode != 0:
+                raise LoomError(f"Failed to get commit SHA: {stderr}")
+            return stdout
         except Exception as e:
             logger.error(f"Error getting commit SHA: {str(e)}")
             raise LoomError(f"Failed to get commit SHA: {str(e)}")
@@ -141,26 +157,16 @@ class RepositoryService:
     async def create_contribution_branch(self, workspace: Workspace, branch_name: str):
         """
         Creates and checks out a new branch in the workspace.
-        Ensures we start from the default branch.
         """
         try:
-            # 1. Create and switch to the new branch
             cmd = ["git", "checkout", "-b", branch_name]
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                cwd=str(workspace.path),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            stdout, stderr = await process.communicate()
+            returncode, stdout, stderr = await self._run_git_command(cmd, cwd=workspace.path)
 
-            if process.returncode != 0:
-                error_msg = stderr.decode().strip()
-                logger.error(f"Git checkout failed: {error_msg}")
-                raise LoomError(f"Failed to create branch: {error_msg}", status_code=500)
+            if returncode != 0:
+                logger.error(f"Git checkout failed: {stderr}")
+                raise LoomError(f"Failed to create branch: {stderr}", status_code=500)
 
             logger.info(f"Created and checked out branch {branch_name} in {workspace.path}")
-
         except Exception as e:
             if not isinstance(e, LoomError):
                 logger.error(f"Unexpected error creating branch: {str(e)}")
@@ -172,16 +178,9 @@ class RepositoryService:
         Pushes the contribution branch to the remote GitHub repository.
         """
         try:
-            # 1. Verify we are on the correct branch and it exists
+            # 1. Verify we are on the correct branch
             cmd = ["git", "rev-parse", "--abbrev-ref", "HEAD"]
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                cwd=str(workspace.path),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            stdout, _ = await process.communicate()
-            current_branch = stdout.decode().strip()
+            returncode, current_branch, _ = await self._run_git_command(cmd, cwd=workspace.path)
 
             if current_branch != branch_name:
                 raise LoomError(f"Workspace is on branch {current_branch}, expected {branch_name}")
@@ -189,41 +188,24 @@ class RepositoryService:
             # 2. Setup authenticated remote URL for push
             authenticated_url = repo_url.replace("https://", f"https://{access_token}@")
 
-            # 3. Commit changes (if not already committed)
-            # We assume implementation agent already added files, but let's be sure
-            await asyncio.create_subprocess_exec("git", "add", ".", cwd=str(workspace.path))
-            commit_process = await asyncio.create_subprocess_exec(
-                "git", "commit", "-m", f"Loom: Implementation for {branch_name}",
-                cwd=str(workspace.path),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+            # 3. Commit changes
+            await self._run_git_command(["git", "add", "."], cwd=workspace.path)
+            await self._run_git_command(
+                ["git", "commit", "-m", f"Loom: Implementation for {branch_name}"],
+                cwd=workspace.path
             )
-            await commit_process.communicate() # Ignore if nothing to commit
 
             # 4. Push to remote
-            # We use -u to track and --force if necessary (but usually not for new AI branches)
             cmd = ["git", "push", authenticated_url, branch_name]
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                cwd=str(workspace.path),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            stdout, stderr = await process.communicate()
+            returncode, stdout, stderr = await self._run_git_command(cmd, cwd=workspace.path)
 
-            if process.returncode != 0:
-                error_msg = stderr.decode().strip()
-                logger.error(f"Git push failed: {error_msg}")
-
-                if "401" in error_msg or "403" in error_msg:
-                    raise LoomError("GitHub authentication failed or permission denied during push", status_code=403)
-                if "rate limit" in error_msg.lower():
-                    raise LoomError("GitHub rate limit exceeded during push", status_code=429)
-
-                raise LoomError(f"Failed to push branch: {error_msg}", status_code=500)
+            if returncode != 0:
+                logger.error(f"Git push failed: {stderr}")
+                if "401" in stderr or "403" in stderr:
+                    raise LoomError("GitHub authentication failed during push", status_code=403)
+                raise LoomError(f"Failed to push branch: {stderr}", status_code=500)
 
             logger.info(f"Successfully pushed branch {branch_name} to remote.")
-
         except Exception as e:
             if not isinstance(e, LoomError):
                 logger.error(f"Unexpected error during push: {str(e)}")
@@ -235,55 +217,19 @@ class RepositoryService:
         Generates a git diff for the changes in the workspace.
         """
         try:
-            # First, stage all changes so we can see them in diff
-            # In a real app we might want more granular control
-            subprocess_cmd = ["git", "add", "."]
-            process = await asyncio.create_subprocess_exec(
-                *subprocess_cmd,
-                cwd=str(workspace.path),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            await process.communicate()
+            await self._run_git_command(["git", "add", "."], cwd=workspace.path)
 
-            # 1. Get the diff content (staged changes)
-            cmd = ["git", "diff", "--staged"]
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                cwd=str(workspace.path),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            stdout, stderr = await process.communicate()
-
-            if process.returncode != 0:
-                raise LoomError(f"Git diff failed: {stderr.decode()}")
-
-            diff_content = stdout.decode("utf-8", errors="replace")
+            # 1. Get the diff content
+            returncode, diff_content, stderr = await self._run_git_command(["git", "diff", "--staged"], cwd=workspace.path)
+            if returncode != 0:
+                raise LoomError(f"Git diff failed: {stderr}")
 
             # 2. Get short stats
-            cmd = ["git", "diff", "--staged", "--shortstat"]
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                cwd=str(workspace.path),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            stdout, stderr = await process.communicate()
-
-            stats_text = stdout.decode().strip()
+            _, stats_text, _ = await self._run_git_command(["git", "diff", "--staged", "--shortstat"], cwd=workspace.path)
 
             # 3. Get list of changed files
-            cmd = ["git", "diff", "--staged", "--name-only"]
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                cwd=str(workspace.path),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            stdout, stderr = await process.communicate()
-            files = stdout.decode().strip().split("\n")
-            files = [f for f in files if f]
+            _, files_text, _ = await self._run_git_command(["git", "diff", "--staged", "--name-only"], cwd=workspace.path)
+            files = [f for f in files_text.split("\n") if f]
 
             # Parse stats
             additions = 0

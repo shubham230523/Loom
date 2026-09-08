@@ -6,6 +6,7 @@ from typing import Optional, List, Any
 from uuid import UUID
 
 from backend.app.database import get_db, User, Repository, RepositoryIndex, Issue, Contribution
+from backend.app.database.session import SessionLocal
 from backend.app.security.auth import get_current_user, get_optional_current_user
 from backend.app.github.service import github_service
 from backend.app.ai import semantic_search_service
@@ -80,7 +81,10 @@ async def get_repository_details(
                 **gh_repo,
                 "loom_id": str(repo.id),
                 "is_imported": True,
-                "indexing_status": latest_index.status if latest_index else "not_started"
+                "indexing_status": latest_index.status if latest_index else "not_started",
+                "discovery_status": repo.discovery_status,
+                "discovery_error": repo.discovery_error,
+                "last_discovery_at": repo.last_discovery_at
             }
         except Exception:
             # Fallback to DB data if GitHub fails
@@ -96,7 +100,10 @@ async def get_repository_details(
                 "forks_count": repo.forks_count,
                 "owner": {"login": repo.owner, "avatar_url": None},
                 "is_imported": True,
-                "indexing_status": latest_index.status if latest_index else "not_started"
+                "indexing_status": latest_index.status if latest_index else "not_started",
+                "discovery_status": repo.discovery_status,
+                "discovery_error": repo.discovery_error,
+                "last_discovery_at": repo.last_discovery_at
             }
 
     # 3. Fallback: Fetch from GitHub directly
@@ -154,9 +161,6 @@ async def initialize_repository(
 
     return repo
 
-# Fix background task db session handling
-from backend.app.database.session import SessionLocal
-
 async def run_indexing(repo_id: str, access_token: str):
     """Background task for repository indexing"""
     logger.info(f"Starting background indexing for repository {repo_id}")
@@ -186,10 +190,13 @@ async def discover_opportunities(
     db: AsyncSession = Depends(get_db)
 ):
     """Triggers autonomous discovery of opportunities. Indexes first if needed."""
+    logger.info(f"API: Received discovery request for repository {repository_id}")
     query = select(Repository).where(Repository.id == repository_id)
     result = await db.execute(query)
     repo = result.scalar_one_or_none()
-    if not repo: raise HTTPException(status_code=404, detail="Repository not found")
+    if not repo:
+        logger.error(f"API: Repository {repository_id} not found")
+        raise HTTPException(status_code=404, detail="Repository not found")
 
     client = await github_service.get_client_for_user(db, current_user)
 
@@ -209,13 +216,33 @@ async def discover_opportunities(
         active_index = (await db.execute(active_index_query)).scalar_one_or_none()
 
         if not active_index:
-            logger.info(f"Triggering on-demand indexing for {repo.full_name}")
+            logger.info(f"API: Triggering on-demand indexing for {repo.full_name}")
             background_tasks.add_task(run_indexing, str(repo.id), client.access_token)
 
         return {"status": "indexing", "message": "Repository is being indexed. Discovery will start automatically after indexing."}
 
-    count = await opportunity_service.discover_and_persist_opportunities(db, repo, client)
-    return {"status": "success", "new_opportunities_count": count}
+    # Trigger discovery in background
+    logger.info(f"API: Triggering background discovery for {repo.full_name}")
+    repo.discovery_status = "discovering"
+    repo.discovery_error = None
+    await db.commit()
+
+    background_tasks.add_task(run_discovery, str(repo.id), client.access_token)
+    return {"status": "discovering", "message": "Discovery started in background."}
+
+async def run_discovery(repo_id: str, access_token: str):
+    """Background task for opportunity discovery"""
+    logger.info(f"Background: Starting discovery for repository {repo_id}")
+    async with SessionLocal() as db:
+        try:
+            query = select(Repository).where(Repository.id == UUID(repo_id))
+            repo = (await db.execute(query)).scalar_one_or_none()
+            if repo:
+                from backend.app.github.client import GitHubClient
+                client = GitHubClient(access_token=access_token)
+                await opportunity_service.discover_and_persist_opportunities(db, repo, client)
+        except Exception as e:
+            logger.error(f"Background: Discovery failed for {repo_id}: {str(e)}", exc_info=True)
 
 @router.post("/{repository_id}/opportunities/{opportunity_id}/score")
 async def score_opportunity(

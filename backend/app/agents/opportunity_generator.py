@@ -81,6 +81,8 @@ class OpportunityGeneratorAgent:
         4. Be technically specific in the description.
         """
 
+        logger.info(f"OpportunityGeneratorAgent: Final prompt context summary: Issues={len(issues)}, Signals={len(code_signals)}, Gaps={len(test_gaps)}")
+
         request = ChatRequest(
             messages=[
                 ChatMessage(role=MessageRole.SYSTEM, content="You are a strategic engineering leader identifying the most valuable work for a project."),
@@ -88,12 +90,19 @@ class OpportunityGeneratorAgent:
             ]
         )
 
-        result = await ai_gateway.chat_structured(
-            request=request,
-            response_model=OpportunityList,
-            task=TaskType.PLANNING
-        )
-
-        return result.opportunities
+        logger.info(f"OpportunityGeneratorAgent: Sending request to AI Gateway...")
+        try:
+            result = await ai_gateway.chat_structured(
+                request=request,
+                response_model=OpportunityList,
+                task=TaskType.PLANNING
+            )
+            logger.info(f"OpportunityGeneratorAgent: AI returned {len(result.opportunities)} opportunities.")
+            if len(result.opportunities) == 0:
+                logger.warning("OpportunityGeneratorAgent: AI returned zero opportunities!")
+            return result.opportunities
+        except Exception as e:
+            logger.error(f"OpportunityGeneratorAgent: AI call failed: {str(e)}")
+            raise e
 
 opportunity_generator_agent = OpportunityGeneratorAgent()

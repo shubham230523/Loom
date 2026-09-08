@@ -1,5 +1,5 @@
 import { View, Pressable } from 'react-native';
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import { ScreenContainer } from '@/components/ui/screen-container';
 import { Text } from '@/components/ui/text';
@@ -14,8 +14,11 @@ export default function SettingsScreen() {
   const theme = useTheme();
   const { user } = useAuthStore();
 
-  const handleLogout = () => {
-    AuthService.logout();
+  const router = useRouter();
+
+  const handleLogout = async () => {
+    await AuthService.logout();
+    router.replace('/welcome');
   };
 
   return (
@@ -45,7 +48,7 @@ export default function SettingsScreen() {
           <SettingsItem
             icon="cpu"
             label="AI Providers"
-            value="Default (Loom Cloud)"
+            value="Default (OpenRouter)"
             theme={theme}
             isLast
           />

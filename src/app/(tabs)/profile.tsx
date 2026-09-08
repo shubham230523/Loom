@@ -19,7 +19,7 @@ export default function ProfileScreen() {
   };
 
   return (
-    <ScreenContainer scrollable className="py-6">
+    <ScreenContainer scrollable className="pt-16 pb-6">
       {/* Profile Header */}
       <View className="items-center mb-8">
         <View className="w-24 h-24 rounded-full bg-muted items-center justify-center mb-4 border border-border overflow-hidden">

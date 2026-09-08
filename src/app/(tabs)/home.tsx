@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 export default function HomeScreen() {
   const router = useRouter();
   return (
-    <ScreenContainer scrollable className="py-6" maxWidth={1200}>
+    <ScreenContainer scrollable className="pt-16 pb-6" maxWidth={1200}>
       <View className="mb-8">
         <Text variant="title">Dashboard</Text>
         <Text variant="muted">Overview of your autonomous collaboration.</Text>

@@ -5,7 +5,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 
 export default function ActivityScreen() {
   return (
-    <ScreenContainer scrollable className="py-6">
+    <ScreenContainer scrollable className="pt-16 pb-6">
       <View className="mb-8">
         <Text variant="title">Activity</Text>
         <Text variant="muted">Stay updated with agent actions and repository events.</Text>

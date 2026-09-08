@@ -1,5 +1,6 @@
 import { useLocalSearchParams, Stack, useRouter } from 'expo-router';
 import { View, Image, Linking, Pressable, Alert } from 'react-native';
+import { useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ScreenContainer } from '@/components/ui/screen-container';
 import { Text } from '@/components/ui/text';
@@ -25,26 +26,39 @@ export default function RepositoryDetailsScreen() {
     queryFn: () => RepositoryService.getById(id!),
     enabled: !!id,
     refetchInterval: (query) => {
-      // Poll if indexing is in progress
-      return query.state.data?.indexing_status === 'in_progress' ? 3000 : false;
+      const data = query.state.data;
+      if (!data?.is_imported) return false;
+
+      const isIndexing = data.indexing_status === 'in_progress' || data.indexing_status === 'not_started';
+      const isDiscovering = data.discovery_status === 'discovering';
+
+      // Poll if indexing or discovery is in progress
+      return isIndexing || isDiscovering ? 3000 : false;
     }
   });
 
   const loomId = repo?.loom_id; // This will be the UUID if imported
 
   // 2. Fetch Opportunities (only if imported)
-  const { data: opportunities, isLoading: isOppsLoading } = useQuery({
+  const { data: opportunities, isLoading: isOppsLoading, refetch: refetchOpps } = useQuery({
     queryKey: ['opportunities', loomId],
     queryFn: () => OpportunityService.list(loomId!),
     enabled: !!loomId,
   });
 
+  // Watch for discovery completion to refetch opportunities
+  useEffect(() => {
+    if (repo?.discovery_status === 'completed') {
+      refetchOpps();
+    }
+  }, [repo?.discovery_status]);
+
   // 3. Discovery Mutation
   const discoverMutation = useMutation({
     mutationFn: () => OpportunityService.discover(loomId!),
     onSuccess: (data) => {
-      if (data.status === 'indexing') {
-        // Trigger a refetch to start polling for indexing status
+      if (data.status === 'indexing' || data.status === 'discovering') {
+        // Trigger a refetch to start polling for status
         refetchRepo();
       } else {
         queryClient.invalidateQueries({ queryKey: ['opportunities', loomId] });
@@ -166,25 +180,35 @@ export default function RepositoryDetailsScreen() {
           <Button
             className="flex-1"
             variant={repo.is_imported ? "default" : "secondary"}
-            loading={initializeMutation.isPending || discoverMutation.isPending}
+            loading={
+              initializeMutation.isPending ||
+              discoverMutation.isPending ||
+              repo.indexing_status === 'in_progress' ||
+              repo.discovery_status === 'discovering'
+            }
             label={
               repo.indexing_status === 'failed'
                 ? "Analysis Failed - Retry"
-                : repo.indexing_status === 'in_progress'
-                  ? "Analyzing Codebase..."
-                  : initializeMutation.isPending
-                    ? "Adding to Loom..."
-                    : discoverMutation.isPending
+                : repo.discovery_status === 'failed'
+                  ? "Discovery Failed - Retry"
+                  : repo.indexing_status === 'in_progress'
+                    ? "Analyzing Codebase..."
+                    : repo.discovery_status === 'discovering'
                       ? "Discovering..."
-                      : repo.is_imported
-                        ? "Discover Opportunities"
-                        : "Add to Loom"
+                      : initializeMutation.isPending
+                        ? "Adding to Loom..."
+                        : discoverMutation.isPending
+                          ? "Starting Discovery..."
+                          : repo.is_imported
+                            ? "Discover Opportunities"
+                            : "Add to Loom"
             }
             onPress={handleDiscover}
             disabled={
               discoverMutation.isPending ||
               initializeMutation.isPending ||
-              repo.indexing_status === 'in_progress'
+              repo.indexing_status === 'in_progress' ||
+              repo.discovery_status === 'discovering'
             }
           />
           <Button
@@ -195,6 +219,13 @@ export default function RepositoryDetailsScreen() {
             <Text className="text-xl">🔗</Text>
           </Button>
         </View>
+
+        {repo.discovery_error && (
+          <View className="bg-destructive/10 p-4 rounded-xl border border-destructive/20">
+            <Text className="text-destructive text-sm font-medium mb-1">Discovery Error</Text>
+            <Text variant="small" className="text-destructive/80">{repo.discovery_error}</Text>
+          </View>
+        )}
 
         {/* Technical Summary */}
         <Card>

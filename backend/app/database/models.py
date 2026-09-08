@@ -93,6 +93,11 @@ class Repository(Base):
     forks_count: Mapped[int] = mapped_column(Integer, default=0)
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    # Discovery tracking
+    discovery_status: Mapped[str] = mapped_column(String(50), default="idle") # idle, discovering, completed, failed
+    last_discovery_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    discovery_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc)

@@ -9,7 +9,7 @@ export default function ContributionsScreen() {
   const router = useRouter();
 
   return (
-    <ScreenContainer scrollable className="py-6">
+    <ScreenContainer scrollable className="pt-16 pb-6">
       <View className="mb-8">
         <Text variant="title">Contributions</Text>
         <Text variant="muted">Track and manage your impact on the community.</Text>

@@ -18,10 +18,11 @@
     "expo-symbols": "~57.0.2",
     "expo-web-browser": "~57.0.2",
     "lodash.debounce": "^4.0.8",
-    "nativewind": "^4.1.23",
+    "nativewind": "^4.2.6",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.3",
+    "react-native-css-interop": "^0.2.6",
     "react-native-gesture-handler": "~2.32.0",
     "react-native-reanimated": "4.5.1",
     "react-native-safe-area-context": "~5.7.0",
@@ -61,16 +62,11 @@
       "<rootDir>/src/jest-setup.ts"
     ],
     "moduleNameMapper": {
-      "^@/(.*)$": "<rootDir>/src/$1",
-      "^react-native-css-interop$": "<rootDir>/node_modules/nativewind/node_modules/react-native-css-interop",
-      "^react-native-css-interop/jsx-runtime$": "<rootDir>/node_modules/nativewind/node_modules/react-native-css-interop/jsx-runtime"
+      "^@/(.*)$": "<rootDir>/src/$1"
     },
     "transformIgnorePatterns": [
       "node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg|nativewind|react-native-css-interop)"
     ]
   },
-  "private": true,
-  "overrides": {
-    "react-native-css-interop": "0.1.21"
-  }
+  "private": true
 }

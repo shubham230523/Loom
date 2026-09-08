@@ -27,7 +27,7 @@ export default function WelcomeScreen() {
   }
 
   return (
-    <ScreenContainer scrollable className="py-12">
+    <ScreenContainer scrollable className="pt-16 pb-12">
       <View className="items-center mb-12">
         <Badge variant="outline" label="v1.0.0-alpha" className="mb-4" />
         <Text variant="title" className="text-5xl tracking-[10px] text-primary font-black mb-2">

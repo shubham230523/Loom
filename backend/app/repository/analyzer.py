@@ -98,13 +98,13 @@ class RepositoryAnalyzer:
                 files_metadata=files_metadata
             )
 
-            # Persist to DB
+            # Persist to local object state
             index.summary = summary.model_dump()
-            await db.commit()
-            logger.info(f"AI summary generated and stored for index {index.id}")
+            logger.info(f"AI summary generated for index {index.id}")
 
             # Generate embedding for the index (contextual search)
             await embedding_service.embed_repository_index(db, index)
+            # Note: Caller is responsible for final commit
 
         except Exception as e:
             logger.error(f"Failed to generate repository summary: {str(e)}")

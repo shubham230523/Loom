@@ -1,6 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import Optional, List, Dict, Any
+from backend.app.config import settings
 from backend.app.database import Repository, RepositoryIndex, RepositoryFile, RepositorySymbol
 from backend.app.repository.service import repository_service, Workspace
 from backend.app.repository.symbol_extractor import symbol_extractor
@@ -22,55 +23,52 @@ class RepositoryIndexer:
         Clones, analyzes, and indexes a repository.
         Reuses existing index if commit_sha matches.
         """
-        # 1. Check if index already exists
-        if commit_sha:
-            query = select(RepositoryIndex).where(
-                RepositoryIndex.repository_id == repository.id,
-                RepositoryIndex.commit_sha == commit_sha,
-                RepositoryIndex.status == "completed"
-            )
-            result = await db.execute(query)
-            existing_index = result.scalar_one_or_none()
-            if existing_index:
-                logger.info(f"Reusing existing index for {repository.full_name} at {commit_sha}")
-                return existing_index
+        logger.info(f"Indexer: Starting indexing for {repository.full_name}")
+
+        # 1. Create a placeholder index record immediately to prevent duplicate tasks
+        index = RepositoryIndex(
+            repository_id=repository.id,
+            branch=branch,
+            commit_sha=commit_sha or "unknown",
+            status="in_progress"
+        )
+        db.add(index)
+        await db.commit()
+        await db.refresh(index)
 
         workspace = Workspace()
         try:
             # 2. Clone repository
+            logger.info(f"Indexer: Cloning {repository.full_name}...")
             await repository_service.clone_repository(
                 repo_url=repository.html_url,
                 access_token=access_token,
                 workspace=workspace
             )
 
-            # 3. Get actual commit SHA if not provided
-            if not commit_sha:
-                commit_sha = await repository_service.get_current_commit_sha(workspace)
+            # 3. Get actual commit SHA
+            actual_sha = await repository_service.get_current_commit_sha(workspace)
 
-                # Check again if this SHA is already indexed
-                query = select(RepositoryIndex).where(
-                    RepositoryIndex.repository_id == repository.id,
-                    RepositoryIndex.commit_sha == commit_sha,
-                    RepositoryIndex.status == "completed"
-                )
-                result = await db.execute(query)
-                existing_index = result.scalar_one_or_none()
-                if existing_index:
-                    logger.info(f"Reusing existing index for {repository.full_name} at {commit_sha}")
-                    return existing_index
-
-            # 4. Create new index record
-            index = RepositoryIndex(
-                repository_id=repository.id,
-                branch=branch,
-                commit_sha=commit_sha,
-                status="in_progress"
+            # Check if this SHA is already completed elsewhere
+            query = select(RepositoryIndex).where(
+                RepositoryIndex.repository_id == repository.id,
+                RepositoryIndex.commit_sha == actual_sha,
+                RepositoryIndex.status == "completed"
             )
-            db.add(index)
-            await db.flush()
+            result = await db.execute(query)
+            existing_completed = result.scalar_one_or_none()
 
-            # 5. Discover files
+            if existing_completed:
+                logger.info(f"Indexer: Found completed index for {actual_sha}, cleaning up placeholder.")
+                index.status = "completed" # Or just delete placeholder
+                await db.commit()
+                return existing_completed
+
+            index.commit_sha = actual_sha
+            await db.commit()
+
+            # 4. Discover files
+            logger.info(f"Indexer: Discovering files...")
             files_metadata = await repository_service.discover_files(workspace)
 
             # 6. Extract symbols and persist
@@ -126,27 +124,23 @@ class RepositoryIndexer:
 
             # 8. Finalize index
             index.status = "completed"
+            db.add(index) # Re-ensure it is in the session
             await db.commit()
-            logger.info(f"Successfully indexed {repository.full_name} at {commit_sha}")
+            logger.info(f"Successfully indexed {repository.full_name} at {index.commit_sha}")
             return index
 
         except Exception as e:
-            # Try to mark the index as failed
+            logger.error(f"Indexer: Failed during processing: {str(e)}", exc_info=True)
+            # Try to mark the index as failed using a fresh state if possible
             try:
-                index_query = select(RepositoryIndex).where(
-                    RepositoryIndex.repository_id == repository.id,
-                    RepositoryIndex.status == "in_progress"
-                ).order_by(RepositoryIndex.created_at.desc())
-                idx_res = await db.execute(index_query)
-                idx = idx_res.scalar_one_or_none()
-                if idx:
-                    idx.status = "failed"
-                    idx.error_info = str(e)
-                await db.commit()
-            except Exception:
+                if index:
+                    index.status = "failed"
+                    index.error_info = str(e)
+                    await db.commit()
+            except Exception as commit_error:
+                logger.error(f"Indexer: Could not save failure status: {str(commit_error)}")
                 await db.rollback()
 
-            logger.error(f"Failed to index repository: {str(e)}")
             raise LoomError(f"Indexing failed: {str(e)}", status_code=500)
         finally:
             await workspace.cleanup()

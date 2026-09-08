@@ -20,6 +20,7 @@ export interface Opportunity {
 }
 
 export interface SyncOpportunitiesResponse {
-  status: string;
-  new_opportunities_count: number;
+  status: 'success' | 'indexing' | 'discovering';
+  new_opportunities_count?: number;
+  message?: string;
 }

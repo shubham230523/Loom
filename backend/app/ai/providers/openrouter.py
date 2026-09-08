@@ -55,9 +55,10 @@ class OpenRouterProvider(AIProvider):
 
     async def chat(self, request: ChatRequest) -> ChatResponse:
         url = f"{self.base_url}/chat/completions"
+        model = request.model or settings.DEFAULT_MODEL
 
         payload = {
-            "model": request.model or settings.DEFAULT_MODEL,
+            "model": model,
             "messages": [m.model_dump(exclude_none=True) for m in request.messages],
             "temperature": request.temperature,
             "max_tokens": request.max_tokens,
@@ -67,30 +68,36 @@ class OpenRouterProvider(AIProvider):
         if request.response_format:
             payload["response_format"] = request.response_format
 
+        logger.info(f"OpenRouter: Sending request to {model}")
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             try:
                 response = await client.post(url, headers=self._get_headers(), json=payload)
 
                 if response.status_code != 200:
+                    logger.error(f"OpenRouter: Request failed with status {response.status_code}")
                     await self._handle_error(response)
 
                 data = response.json()
                 choice = data.get("choices", [{}])[0]
                 message_data = choice.get("message", {})
 
+                content = message_data.get("content", "")
+                logger.info(f"OpenRouter: Received response from {model}. Content length: {len(content)}")
+
                 return ChatResponse(
                     message=ChatMessage(
                         role=message_data.get("role", MessageRole.ASSISTANT),
-                        content=message_data.get("content", "")
+                        content=content
                     ),
                     finish_reason=choice.get("finish_reason"),
                     usage=data.get("usage")
                 )
             except httpx.TimeoutException:
+                logger.error(f"OpenRouter: Request timed out after {self.timeout}s")
                 raise LoomError("OpenRouter request timed out", status_code=504)
             except Exception as e:
                 if isinstance(e, LoomError): raise e
-                logger.error(f"OpenRouter Unexpected Error: {str(e)}")
+                logger.error(f"OpenRouter: Unexpected Error: {str(e)}", exc_info=True)
                 raise LoomError(f"AI Provider failure: {str(e)}", status_code=500)
 
     async def chat_stream(self, request: ChatRequest) -> AsyncIterator[ChatStreamChunk]:
@@ -144,10 +151,20 @@ class OpenRouterProvider(AIProvider):
         response = await self.chat(request)
         content = response.message.content
 
+        if not content:
+            logger.error("OpenRouter: Received empty content in structured request")
+            raise LoomError("AI Provider returned empty response", status_code=502)
+
+        # Clean content if it contains markdown markers
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0].strip()
+        elif "```" in content:
+            content = content.split("```")[1].split("```")[0].strip()
+
         try:
             return response_model.model_validate_json(content)
         except Exception as e:
-            logger.error(f"Failed to parse structured OpenRouter response: {str(e)}. Content: {content}")
+            logger.error(f"OpenRouter: Failed to parse structured response: {str(e)}. Raw Content: {content}")
             raise LoomError("AI Provider returned invalid structured data", status_code=502)
 
     async def generate_embeddings(self, request: EmbeddingsRequest) -> EmbeddingsResponse:

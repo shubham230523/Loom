@@ -1,9 +1,22 @@
+import asyncio
+import sys
+
+# Set Windows-specific event loop policy for subprocess support
+# This MUST happen at the very top
+if sys.platform == 'win32':
+    try:
+        from asyncio import WindowsProactorEventLoopPolicy
+        asyncio.set_event_loop_policy(WindowsProactorEventLoopPolicy())
+    except ImportError:
+        pass
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
+
 from backend.app.config import settings
-from backend.app.utils.logging import setup_logging
+from backend.app.utils.logging import setup_logging, logger
 from backend.app.api.middleware import RequestIDMiddleware, LoggingMiddleware, RateLimitMiddleware
 from backend.app.api.errors import (
     LoomError,
@@ -21,6 +34,13 @@ setup_logging(service_name=settings.APP_NAME)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: Connect to Redis
+    loop = asyncio.get_running_loop()
+    logger.info(f"Application starting. Event loop type: {type(loop).__name__}")
+
+    if sys.platform == 'win32' and type(loop).__name__ == 'SelectorEventLoop':
+        logger.warning("WARNING: Running on Windows with SelectorEventLoop. Subprocesses will fail.")
+        logger.warning("Please ensure uvicorn is using the Proactor loop.")
+
     await redis_service.connect()
     yield
     # Shutdown: Disconnect from Redis

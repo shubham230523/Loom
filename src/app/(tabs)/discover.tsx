@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { View, Pressable, FlatList, Image } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
@@ -12,22 +12,33 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { RepositoryService } from '@/services/repository.service';
 import { GitHubRepository } from '@/types/repository';
+import debounce from 'lodash.debounce';
 
 export default function DiscoverScreen() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [page, setPage] = useState(1);
 
+  // Use a debounced effect to update the query used for the API call
+  const debouncedSetQuery = useCallback(
+    debounce((text: string) => {
+      setDebouncedQuery(text);
+      setPage(1);
+    }, 500),
+    []
+  );
+
   const { data, isLoading, error, isError, refetch, isFetching } = useQuery({
-    queryKey: ['repositories', searchQuery, page],
-    queryFn: () => RepositoryService.search({ q: searchQuery || 'stars:>1000', page }),
-    enabled: true, // Always show some repos if empty query
+    queryKey: ['repositories', debouncedQuery, page],
+    queryFn: () => RepositoryService.search({ q: debouncedQuery || 'stars:>1000', page }),
+    enabled: true,
   });
 
-  const handleSearch = useCallback((text: string) => {
+  const handleSearchChange = (text: string) => {
     setSearchQuery(text);
-    setPage(1);
-  }, []);
+    debouncedSetQuery(text);
+  };
 
   const renderRepository = ({ item }: { item: GitHubRepository }) => (
     <Pressable
@@ -72,8 +83,8 @@ export default function DiscoverScreen() {
   );
 
   const renderContent = () => {
-    if (isLoading && !isFetching) {
-      return <LoadingState message="Discovering high-impact repositories..." />;
+    if (isFetching && page === 1) {
+      return <LoadingState message="Searching repositories..." />;
     }
 
     if (isError) {
@@ -114,7 +125,7 @@ export default function DiscoverScreen() {
   };
 
   return (
-    <ScreenContainer className="py-6">
+    <ScreenContainer className="pt-16 pb-6">
       <View className="mb-6">
         <Text variant="title">Discover</Text>
         <Text variant="muted">Find and collaborate on open source projects.</Text>
@@ -125,7 +136,7 @@ export default function DiscoverScreen() {
           <Input
             placeholder="Search repositories..."
             value={searchQuery}
-            onChangeText={handleSearch}
+            onChangeText={handleSearchChange}
             leftIcon={
               <Text style={{ fontSize: 18, marginLeft: 8 }}>🔍</Text>
             }

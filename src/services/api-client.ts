@@ -2,7 +2,7 @@ import axios, { AxiosError, AxiosInstance, InternalAxiosRequestConfig } from 'ax
 import { ApiError, ApiErrorResponse } from '@/types/api';
 import { useAuthStore } from '@/store/auth-store';
 
-const DEFAULT_TIMEOUT = 15000; // 15 seconds
+const DEFAULT_TIMEOUT = 60000; // 60 seconds (increased for AI operations)
 
 // For local development with Android Emulator, use 10.0.2.2 instead of localhost
 const getBaseUrl = () => {

@@ -19,7 +19,7 @@ class EmbeddingService:
             response = await ai_gateway.generate_embeddings(EmbeddingsRequest(input=text))
             if response.embeddings:
                 index.embedding = response.embeddings[0]
-                await db.commit()
+                # Committing is handled by the caller
         except Exception as e:
             logger.error(f"Failed to embed repository index {index.id}: {str(e)}")
 
@@ -38,8 +38,6 @@ class EmbeddingService:
             for i, f in enumerate(files):
                 if i < len(response.embeddings):
                     f.embedding = response.embeddings[i]
-
-            await db.commit()
         except Exception as e:
             logger.error(f"Failed to embed files: {str(e)}")
 
@@ -62,10 +60,6 @@ class EmbeddingService:
                 for j, s in enumerate(chunk_symbols):
                     if j < len(response.embeddings):
                         s.embedding = response.embeddings[j]
-
-                await db.flush()
-
-            await db.commit()
         except Exception as e:
             logger.error(f"Failed to embed symbols: {str(e)}")
 
@@ -79,7 +73,6 @@ class EmbeddingService:
             response = await ai_gateway.generate_embeddings(EmbeddingsRequest(input=text))
             if response.embeddings:
                 issue.embedding = response.embeddings[0]
-                await db.commit()
         except Exception as e:
             logger.error(f"Failed to embed issue {issue.id}: {str(e)}")
 

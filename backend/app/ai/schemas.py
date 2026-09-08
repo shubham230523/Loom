@@ -24,7 +24,7 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     message: ChatMessage
-    usage: Optional[Dict[str, int]] = None
+    usage: Optional[Dict[str, Any]] = None
     finish_reason: Optional[str] = None
 
 class ChatStreamChunk(BaseModel):
@@ -37,4 +37,4 @@ class EmbeddingsRequest(BaseModel):
 
 class EmbeddingsResponse(BaseModel):
     embeddings: List[List[float]]
-    usage: Optional[Dict[str, int]] = None
+    usage: Optional[Dict[str, Any]] = None
