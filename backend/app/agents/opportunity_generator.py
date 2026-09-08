@@ -94,7 +94,8 @@ class OpportunityGeneratorAgent:
            - Suggesting a new section or chapter based on the existing repository patterns.
         4. Prioritize "low-hanging fruit" and "high-impact technical debt".
         5. Be technically specific in the description.
-        6. If NO actionable signals OR obvious project improvements are found, return an empty list for the "opportunities" field. Do NOT return other fields instead.
+        6. YOU MUST RETURN A LIST OF OBJECTS. Each object in the "opportunities" list must have all fields: "title", "description", "type", "impact", "difficulty", "confidence", "evidence_source", and "affected_files".
+        7. If NO actionable signals OR obvious project improvements are found, return an empty list for the "opportunities" field. Do NOT return other fields instead.
         """
 
         logger.info(f"OpportunityGeneratorAgent: Final prompt context summary: Issues={len(issues)}, Signals={len(code_signals)}, Gaps={len(test_gaps)}")

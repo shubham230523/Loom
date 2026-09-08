@@ -81,7 +81,7 @@ class OpenRouterProvider(AIProvider):
                 choice = data.get("choices", [{}])[0]
                 message_data = choice.get("message", {})
 
-                content = message_data.get("content", "")
+                content = message_data.get("content") or ""
                 logger.info(f"OpenRouter: Received response from {model}. Content length: {len(content)}")
 
                 return ChatResponse(
