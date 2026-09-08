@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "Loom API"
     ENVIRONMENT: str = "development"
     DEBUG: bool = True
+    LOG_JSON: bool = False
     SECRET_KEY: str = "insecure-development-key"
     ALLOWED_HOSTS: List[str] = ["*"]
 

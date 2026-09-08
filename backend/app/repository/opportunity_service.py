@@ -85,8 +85,13 @@ class OpportunityService:
                 logger.info(f"OpportunityService: Agent generated {len(proposals)} proposals.")
             except Exception as agent_error:
                 logger.error(f"OpportunityService: Agent failed to generate opportunities: {str(agent_error)}")
-                # If it's a validation error (parsing AI), try to fall back
-                if len(code_signals) > 0 or len(issues) > 0:
+
+                # If there are NO signals at all, the AI likely struggled to output the right schema for "nothing found"
+                # We can safely return an empty list in this case.
+                if not issues and not code_signals and not test_gaps:
+                    logger.info("OpportunityService: No signals found and AI failed to follow schema. Proceeding with empty list.")
+                    proposals = []
+                elif len(code_signals) > 0 or len(issues) > 0:
                      logger.info("OpportunityService: Falling back to basic opportunity generation due to AI error...")
                      proposals = self._generate_fallback_proposals(issues, code_signals)
                 else:
@@ -109,6 +114,12 @@ class OpportunityService:
 
             repository.discovery_status = "completed"
             repository.last_discovery_at = datetime.now(timezone.utc)
+
+            if new_count == 0:
+                repository.discovery_error = "No actionable opportunities found in the current repository state."
+            else:
+                repository.discovery_error = None
+
             await db.commit()
             logger.info(f"OpportunityService: Successfully persisted {new_count} opportunities.")
             return new_count

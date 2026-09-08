@@ -38,3 +38,37 @@ async def test_gateway_error_handling(mocker):
 
     assert excinfo.value.status_code == 503
     assert "AI service currently unavailable" in excinfo.value.message
+
+def test_opportunity_list_alias_validation():
+    """Verify that OpportunityList can handle 'actionable_opportunities' alias."""
+    from backend.app.agents.opportunity_generator import OpportunityList
+
+    malformed_json = {
+        "status": "no_actionable_signals",
+        "repository": "shubham230523/AIMastery",
+        "analysis": "Blah blah",
+        "actionable_opportunities": []
+    }
+
+    # Test dictionary validation
+    result = OpportunityList.model_validate(malformed_json)
+    assert result.opportunities == []
+
+    # Test with actual opportunities in the alias field
+    valid_data = {
+        "actionable_opportunities": [
+            {
+                "title": "Fix something",
+                "description": "Details",
+                "type": "bug",
+                "impact": "High",
+                "difficulty": "Easy",
+                "confidence": 0.9,
+                "evidence_source": "TODO",
+                "affected_files": ["main.py"]
+            }
+        ]
+    }
+    result2 = OpportunityList.model_validate(valid_data)
+    assert len(result2.opportunities) == 1
+    assert result2.opportunities[0].title == "Fix something"

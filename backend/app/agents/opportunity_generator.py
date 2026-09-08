@@ -16,8 +16,18 @@ class OpportunityProposal(BaseModel):
     evidence_source: str = Field(description="The specific issue, TODO, or gap that triggered this")
     affected_files: List[str] = Field(description="List of files likely needing modification")
 
+from pydantic import AliasChoices
+
 class OpportunityList(BaseModel):
-    opportunities: List[OpportunityProposal]
+    opportunities: List[OpportunityProposal] = Field(
+        description="List of identified opportunities",
+        validation_alias=AliasChoices("opportunities", "actionable_opportunities")
+    )
+
+    model_config = {
+        "populate_by_name": True,
+        "extra": "ignore"
+    }
 
 class OpportunityGeneratorAgent:
     async def generate_opportunities(
@@ -79,6 +89,7 @@ class OpportunityGeneratorAgent:
         2. DO NOT invent work. Every opportunity must be linked to an actual issue, TODO, gap, or unimplemented function.
         3. Prioritize "low-hanging fruit" and "high-impact technical debt".
         4. Be technically specific in the description.
+        5. If NO actionable signals are found, return an empty list for the "opportunities" field. Do NOT return other fields instead.
         """
 
         logger.info(f"OpportunityGeneratorAgent: Final prompt context summary: Issues={len(issues)}, Signals={len(code_signals)}, Gaps={len(test_gaps)}")
