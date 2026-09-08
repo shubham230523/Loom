@@ -81,7 +81,7 @@ class Settings(BaseSettings):
     # Security Scanning Settings
     SECRET_DETECTION_PATTERNS: List[str] = [
         r"(?i)api_key", r"(?i)client_secret", r"(?i)password",
-        r"sk-[a-zA-Z0-9]{48}", # OpenAI
+        r"sk-[a-zA-Z0-9\-]{32,128}", # OpenAI (including sk-proj-)
         r"AKIA[0-9A-Z]{16}", # AWS Access Key
         r"ghp_[a-zA-Z0-9]{36}", # GitHub PAT
         r"-----BEGIN [A-Z ]+ PRIVATE KEY-----" # Generic Private Key
