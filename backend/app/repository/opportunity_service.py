@@ -182,7 +182,7 @@ class OpportunityService:
     ) -> Optional[Opportunity]:
         query = select(Opportunity).where(Opportunity.id == opportunity_id)
         result = await db.execute(query)
-        return result.scalar_one_or_none()
+        return result.scalars().first()
 
     async def score_opportunity(
         self,
@@ -197,7 +197,7 @@ class OpportunityService:
         """
         query = select(Opportunity).where(Opportunity.id == opportunity_id)
         result = await db.execute(query)
-        opportunity = result.scalar_one_or_none()
+        opportunity = result.scalars().first()
 
         if not opportunity:
             return None

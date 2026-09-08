@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, AliasChoices
 from typing import List, Dict, Any, Optional
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,14 +8,43 @@ from backend.app.ai import ai_gateway, ChatRequest, ChatMessage, MessageRole, Ta
 from backend.app.utils.logging import logger
 
 class IssueAnalysis(BaseModel):
-    problem_statement: str = Field(description="Clear and concise description of the reported problem")
-    impact_assessment: str = Field(description="Likely impact on the users and the system")
-    complexity_level: str = Field(description="Easy, Intermediate, or Hard")
-    reproducibility: str = Field(description="How likely it is to be reproducible given the info")
-    affected_areas: List[str] = Field(description="List of modules, files, or symbols likely affected")
-    is_actionable: bool = Field(description="Whether the issue has enough information to be worked on")
-    missing_information: Optional[str] = Field(description="Details on what info is missing if not actionable")
-    suggested_approach: Optional[str] = Field(description="Brief high-level strategy to solve the issue")
+    problem_statement: str = Field(
+        description="Clear and concise description of the reported problem",
+        validation_alias=AliasChoices("problem_statement", "problemStatement", "problem", "summary")
+    )
+    impact_assessment: str = Field(
+        description="Likely impact on the users and the system",
+        validation_alias=AliasChoices("impact_assessment", "impactAssessment", "impact")
+    )
+    complexity_level: str = Field(
+        description="Easy, Intermediate, or Hard",
+        validation_alias=AliasChoices("complexity_level", "complexityLevel", "complexity", "difficulty")
+    )
+    reproducibility: str = Field(
+        description="How likely it is to be reproducible given the info",
+        validation_alias=AliasChoices("reproducibility", "reproducible")
+    )
+    affected_areas: List[str] = Field(
+        description="List of modules, files, or symbols likely affected",
+        validation_alias=AliasChoices("affected_areas", "affectedAreas", "affected_files", "files")
+    )
+    is_actionable: bool = Field(
+        description="Whether the issue has enough information to be worked on",
+        validation_alias=AliasChoices("is_actionable", "isActionable", "actionable")
+    )
+    missing_information: Optional[str] = Field(
+        description="Details on what info is missing if not actionable",
+        validation_alias=AliasChoices("missing_information", "missingInformation", "missing_info")
+    )
+    suggested_approach: Optional[str] = Field(
+        description="Brief high-level strategy to solve the issue",
+        validation_alias=AliasChoices("suggested_approach", "suggestedApproach", "approach", "solution")
+    )
+
+    model_config = {
+        "populate_by_name": True,
+        "extra": "ignore"
+    }
 
 class IssueAnalyzerAgent:
     async def analyze_issue(

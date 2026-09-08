@@ -16,6 +16,7 @@ from backend.app.security.secret_scanner import secret_scanner
 from backend.app.services.agent_run_service import agent_run_service
 from backend.app.utils.logging import logger
 from backend.app.api.errors import LoomError
+from backend.app.config import settings
 
 class ContributionService:
     async def create_contribution(
@@ -31,7 +32,7 @@ class ContributionService:
         # 1. Verify opportunity exists
         query = select(Opportunity).where(Opportunity.id == opportunity_id)
         result = await db.execute(query)
-        opportunity = result.scalar_one_or_none()
+        opportunity = result.scalars().first()
 
         if not opportunity:
             raise LoomError("Opportunity not found", status_code=404)
@@ -42,7 +43,7 @@ class ContributionService:
             Contribution.opportunity_id == opportunity_id
         )
         result = await db.execute(query)
-        existing = result.scalar_one_or_none()
+        existing = result.scalars().first()
 
         if existing:
             return existing
@@ -64,7 +65,7 @@ class ContributionService:
         self,
         db: AsyncSession,
         contribution_id: UUID
-    ) -> SolutionPlan:
+    ) -> Any:
         """
         Generates and persists a technical solution plan for a contribution.
         """
@@ -107,7 +108,7 @@ class ContributionService:
             if opportunity.issue_id:
                 query = select(Issue).where(Issue.id == opportunity.issue_id)
                 result = await db.execute(query)
-                issue = result.scalar_one_or_none()
+                issue = result.scalars().first()
 
             # 4. Run Planner Agent
             await agent_run_service.emit_event(db, agent_run.id, "step_started", "Synthesizing solution blueprint...")
@@ -121,9 +122,28 @@ class ContributionService:
             await agent_run_service.emit_event(db, agent_run.id, "step_completed", "Solution blueprint generated.")
 
             # 5. Persist Plan
-            # ...
+            # Check for existing plan
+            query = select(SolutionPlan).where(SolutionPlan.contribution_id == contribution_id)
+            existing_plan = (await db.execute(query)).scalars().first()
+            if existing_plan:
+                await db.delete(existing_plan)
 
-            # ... (rest of plan logic)
+            plan = SolutionPlan(
+                contribution_id=contribution_id,
+                problem=plan_output.problem,
+                root_cause=plan_output.root_cause,
+                relevant_files=plan_output.relevant_files,
+                relevant_symbols=plan_output.relevant_symbols,
+                implementation_steps=plan_output.implementation_steps,
+                testing_strategy=plan_output.testing_strategy,
+                risks=plan_output.risks,
+                expected_diff_size=plan_output.expected_diff_size,
+                confidence=plan_output.confidence,
+                status="pending"
+            )
+            db.add(plan)
+            await db.commit()
+            await db.refresh(plan)
 
             await agent_run_service.emit_event(db, agent_run.id, "approval_required", "Solution plan ready for review.")
             await agent_run_service.complete_run(db, agent_run.id, success=True)
@@ -162,7 +182,7 @@ class ContributionService:
         # 2. Check if plan is approved
         query = select(SolutionPlan).where(SolutionPlan.contribution_id == contribution_id)
         result = await db.execute(query)
-        plan = result.scalar_one_or_none()
+        plan = result.scalars().first()
         if not plan or plan.status != "approved":
             raise LoomError("Solution plan must be approved before workspace setup", status_code=400)
 
@@ -174,7 +194,7 @@ class ContributionService:
         if opportunity.issue_id:
             query = select(Issue).where(Issue.id == opportunity.issue_id)
             res = await db.execute(query)
-            issue = res.scalar_one_or_none()
+            issue = res.scalars().first()
             if issue:
                 issue_number = str(issue.number)
 
@@ -298,7 +318,7 @@ class ContributionService:
                     await agent_run_service.emit_event(db, agent_run.id, "test_completed", "Tests failed. Analyzing failure...")
                     query = select(TestRun).where(TestRun.id == final_impl_result.test_run_id)
                     res = await db.execute(query)
-                    test_run = res.scalar_one_or_none()
+                    test_run = res.scalars().first()
 
                     if test_run:
                         code_context = ""
@@ -400,7 +420,7 @@ class ContributionService:
             .order_by(TestRun.timestamp.desc())
         )
         res = await db.execute(query)
-        test_run = res.scalar_one_or_none()
+        test_run = res.scalars().first()
 
         # 3. Execute Review Agent
         review_result = await code_reviewer_agent.review_changes(
@@ -435,7 +455,7 @@ class ContributionService:
         client: GitHubClient
     ) -> Any:
         """
-        Runs the final validation suite for a contribution.
+        Performs comprehensive final validation of a contribution before PR creation.
         """
         # Fetch context
         query = (
@@ -604,7 +624,7 @@ class ContributionService:
         """
         query = select(SolutionPlan).where(SolutionPlan.id == plan_id)
         result = await db.execute(query)
-        plan = result.scalar_one_or_none()
+        plan = result.scalars().first()
 
         if not plan:
             raise LoomError("Solution plan not found", status_code=404)

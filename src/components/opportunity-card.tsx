@@ -10,11 +10,12 @@ import { useTheme } from '@/hooks/use-theme';
 
 interface OpportunityCardProps {
   opportunity: Opportunity;
+  isAnalyzing?: boolean;
   onAnalyze: (id: string) => void;
   onStart: (id: string) => void;
 }
 
-export function OpportunityCard({ opportunity, onAnalyze, onStart }: OpportunityCardProps) {
+export function OpportunityCard({ opportunity, isAnalyzing, onAnalyze, onStart }: OpportunityCardProps) {
   const theme = useTheme();
 
   const getScoreColor = (score: number) => {
@@ -77,13 +78,16 @@ export function OpportunityCard({ opportunity, onAnalyze, onStart }: Opportunity
             variant="outline"
             size="sm"
             className="flex-1"
-            label="Analyze"
+            label={isAnalyzing ? "Analyzing..." : "Analyze"}
+            loading={isAnalyzing}
+            disabled={isAnalyzing}
             onPress={() => onAnalyze(opportunity.id)}
           />
           <Button
             size="sm"
             className="flex-1"
             label="Start Contribution"
+            disabled={isAnalyzing}
             onPress={() => onStart(opportunity.id)}
           />
         </View>

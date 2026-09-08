@@ -76,6 +76,10 @@ export default function RepositoryDetailsScreen() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['opportunities', loomId] });
     },
+    onError: (error: any) => {
+      console.error('Scoring failed:', error);
+      Alert.alert('Analysis Failed', error.message || 'An unexpected error occurred during opportunity analysis.');
+    }
   });
 
   // 5. Initialize Mutation
@@ -270,6 +274,7 @@ export default function RepositoryDetailsScreen() {
               <OpportunityCard
                 key={opp.id}
                 opportunity={opp}
+                isAnalyzing={scoreMutation.isPending && scoreMutation.variables === opp.id}
                 onAnalyze={handleAnalyzeOpportunity}
                 onStart={handleStartContribution}
               />

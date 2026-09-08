@@ -51,7 +51,7 @@ async def get_repository_details(
         uuid_id = UUID(repository_id)
         query = select(Repository).where(Repository.id == uuid_id)
         result = await db.execute(query)
-        repo = result.scalar_one_or_none()
+        repo = result.scalars().first()
     except ValueError:
         pass
 
@@ -61,7 +61,7 @@ async def get_repository_details(
             github_id = int(repository_id)
             query = select(Repository).where(Repository.github_repo_id == github_id)
             result = await db.execute(query)
-            repo = result.scalar_one_or_none()
+            repo = result.scalars().first()
         except ValueError:
             pass
 
@@ -129,7 +129,7 @@ async def initialize_repository(
     """Imports a repository into the local database and starts indexing."""
     query = select(Repository).where(Repository.github_repo_id == github_id)
     result = await db.execute(query)
-    repo = result.scalar_one_or_none()
+    repo = result.scalars().first()
 
     client = await github_service.get_client_for_user(db, current_user)
 
@@ -166,7 +166,7 @@ async def run_indexing(repo_id: str, access_token: str):
     async with SessionLocal() as db:
         try:
             query = select(Repository).where(Repository.id == UUID(repo_id))
-            repo = (await db.execute(query)).scalar_one_or_none()
+            repo = (await db.execute(query)).scalars().first()
             if repo:
                 await repository_indexer.index_repository(db, repo, access_token)
         except Exception as e:
@@ -192,7 +192,7 @@ async def discover_opportunities(
     logger.info(f"API: Received discovery request for repository {repository_id}")
     query = select(Repository).where(Repository.id == repository_id)
     result = await db.execute(query)
-    repo = result.scalar_one_or_none()
+    repo = result.scalars().first()
     if not repo:
         logger.error(f"API: Repository {repository_id} not found")
         raise HTTPException(status_code=404, detail="Repository not found")
@@ -235,7 +235,7 @@ async def run_discovery(repo_id: str, access_token: str):
     async with SessionLocal() as db:
         try:
             query = select(Repository).where(Repository.id == UUID(repo_id))
-            repo = (await db.execute(query)).scalar_one_or_none()
+            repo = (await db.execute(query)).scalars().first()
             if repo:
                 from backend.app.github.client import GitHubClient
                 client = GitHubClient(access_token=access_token)
@@ -252,7 +252,7 @@ async def score_opportunity(
 ):
     """Triggers AI scoring for an opportunity."""
     query = select(Repository).where(Repository.id == repository_id)
-    repo = (await db.execute(query)).scalar_one_or_none()
+    repo = (await db.execute(query)).scalars().first()
     if not repo: raise HTTPException(status_code=404, detail="Repository not found")
 
     index_query = select(RepositoryIndex).where(
@@ -291,7 +291,7 @@ async def get_contribution_details(
         selectinload(Contribution.opportunity)
     ).where(Contribution.id == contribution_id, Contribution.repository_id == repository_id)
     result = await db.execute(query)
-    contribution = result.scalar_one_or_none()
+    contribution = result.scalars().first()
     if not contribution: raise HTTPException(status_code=404, detail="Contribution not found")
     return contribution
 

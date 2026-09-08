@@ -163,9 +163,70 @@ class OpenRouterProvider(AIProvider):
 
         try:
             return response_model.model_validate_json(content)
-        except Exception as e:
-            logger.error(f"OpenRouter: Failed to parse structured response: {str(e)}. Raw Content: {content}")
-            raise LoomError("AI Provider returned invalid structured data", status_code=502)
+        except Exception as first_error:
+            logger.warning(f"OpenRouter: First validation attempt failed: {str(first_error)}. Attempting robust parse...")
+            try:
+                # Try to parse as raw dict first
+                data = json.loads(content)
+
+                # If we expect a list but got a dict with a single list field
+                if hasattr(response_model, "__root__") and isinstance(data, dict):
+                    # Find a field that is a list
+                    for val in data.values():
+                        if isinstance(val, list):
+                            return response_model.model_validate(val)
+
+                # If the AI wrapped the response in a key matching the model name or similar
+                if isinstance(data, dict):
+                    # Check if all required fields are inside a sub-dictionary
+                    for key, val in data.items():
+                        if isinstance(val, dict):
+                            try:
+                                return response_model.model_validate(val)
+                            except Exception:
+                                continue
+
+                # Attempt to map missing required fields from existing ones
+                if isinstance(data, dict):
+                    # Generic mapping for common patterns
+                    for model_field in response_model.model_fields:
+                        if model_field not in data:
+                            # Try camelCase version
+                            camel_field = "".join(word.capitalize() if i > 0 else word for i, word in enumerate(model_field.split("_")))
+                            if camel_field in data:
+                                data[model_field] = data[camel_field]
+
+                            # Try PascalCase version
+                            pascal_field = "".join(word.capitalize() for word in model_field.split("_"))
+                            if pascal_field in data:
+                                data[model_field] = data[pascal_field]
+
+                    # Specific mapping for SolutionPlanOutput
+                    if "problem" not in data:
+                        if "title" in data: data["problem"] = data["title"]
+                        elif "description" in data: data["problem"] = data["description"]
+                        elif "summary" in data: data["problem"] = data["summary"]
+
+                    if "implementation_steps" not in data:
+                        if "implementationPlan" in data: data["implementation_steps"] = data["implementationPlan"]
+                        elif "technicalPlan" in data: data["implementation_steps"] = data["technicalPlan"]
+                        elif "steps" in data: data["implementation_steps"] = data["steps"]
+
+                    if "relevant_files" not in data:
+                        if "affectedFiles" in data: data["relevant_files"] = data["affectedFiles"]
+                        elif "affected_components" in data: data["relevant_files"] = data["affected_components"]
+
+                    # Specific mapping for OpportunityScoreCard
+                    if "overall_score" not in data:
+                        if "overallScore" in data: data["overall_score"] = data["overallScore"]
+                        elif "weighted_overall_score" in data: data["overall_score"] = data["weighted_overall_score"]
+                        elif "score" in data: data["overall_score"] = data["score"]
+
+                # Last ditch effort: model_validate with the data we have, which might use aliases we added
+                return response_model.model_validate(data)
+            except Exception as final_error:
+                logger.error(f"OpenRouter: Failed to parse structured response: {str(final_error)}. Raw Content: {content}")
+                raise LoomError(f"AI Provider returned invalid structured data: {str(first_error)}", status_code=502)
 
     async def generate_embeddings(self, request: EmbeddingsRequest) -> EmbeddingsResponse:
         url = f"{self.base_url}/embeddings"

@@ -20,6 +20,7 @@ from pydantic import AliasChoices
 
 class OpportunityList(BaseModel):
     opportunities: List[OpportunityProposal] = Field(
+        default_factory=list,
         description="List of identified opportunities",
         validation_alias=AliasChoices("opportunities", "actionable_opportunities")
     )

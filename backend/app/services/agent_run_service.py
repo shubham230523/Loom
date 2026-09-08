@@ -64,7 +64,7 @@ class AgentRunService:
     async def complete_run(self, db: AsyncSession, agent_run_id: UUID, success: bool = True):
         query = select(AgentRun).where(AgentRun.id == agent_run_id)
         result = await db.execute(query)
-        run = result.scalar_one_or_none()
+        run = result.scalars().first()
 
         if run:
             run.status = "completed" if success else "failed"
