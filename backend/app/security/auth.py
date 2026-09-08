@@ -32,6 +32,9 @@ class SessionManager:
 
 session_manager = SessionManager()
 
+def decode_token(token: str) -> dict:
+    return session_manager.decode_token(token)
+
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db)

@@ -55,9 +55,12 @@ class RepositoryService:
         """
         await workspace.create()
 
-        # Use token in URL for authentication
+        # Use token in URL for authentication if provided
         # Format: https://<token>@github.com/owner/repo.git
-        authenticated_url = repo_url.replace("https://", f"https://{access_token}@")
+        if access_token:
+            authenticated_url = repo_url.replace("https://", f"https://{access_token}@")
+        else:
+            authenticated_url = repo_url
 
         # Build git clone command with shallow clone for performance/size
         cmd = [

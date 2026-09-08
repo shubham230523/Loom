@@ -270,14 +270,43 @@ async def get_contribution_details(
     return contribution
 
 @router.post("/{repository_id}/contributions/{contribution_id}/plan")
-async def generate_contribution_plan(repository_id: UUID, contribution_id: UUID, db: AsyncSession = Depends(get_db)):
+async def generate_contribution_plan(
+    repository_id: UUID,
+    contribution_id: UUID,
+    db: AsyncSession = Depends(get_db)
+):
     return await contribution_service.generate_plan(db, contribution_id)
 
 @router.post("/{repository_id}/plans/{plan_id}/approve")
-async def approve_contribution_plan(plan_id: UUID, approved: bool = Query(True), db: AsyncSession = Depends(get_db)):
+async def approve_contribution_plan(
+    repository_id: str,
+    plan_id: UUID,
+    approved: bool = Query(True),
+    db: AsyncSession = Depends(get_db)
+):
     return await contribution_service.approve_plan(db, plan_id, approved)
 
 @router.post("/{repository_id}/contributions/{contribution_id}/implement")
 async def execute_implementation(repository_id: UUID, contribution_id: UUID, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     client = await github_service.get_client_for_user(db, current_user)
     return await contribution_service.execute_implementation(db, contribution_id, client)
+
+@router.post("/{repository_id}/contributions/{contribution_id}/workspace")
+async def setup_workspace(repository_id: UUID, contribution_id: UUID, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    client = await github_service.get_client_for_user(db, current_user)
+    return await contribution_service.setup_contribution_workspace(db, contribution_id, client)
+
+@router.get("/{repository_id}/contributions/{contribution_id}/validate")
+async def validate_contribution(repository_id: UUID, contribution_id: UUID, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    client = await github_service.get_client_for_user(db, current_user)
+    return await contribution_service.validate_contribution(db, contribution_id, client)
+
+@router.post("/{repository_id}/contributions/{contribution_id}/push")
+async def push_contribution(repository_id: UUID, contribution_id: UUID, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    client = await github_service.get_client_for_user(db, current_user)
+    return await contribution_service.push_to_github(db, contribution_id, client)
+
+@router.post("/{repository_id}/contributions/{contribution_id}/pull-request")
+async def create_pull_request(repository_id: UUID, contribution_id: UUID, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    client = await github_service.get_client_for_user(db, current_user)
+    return await contribution_service.create_github_pr(db, contribution_id, client)

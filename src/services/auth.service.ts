@@ -59,7 +59,7 @@ export class AuthService {
     }
 
     try {
-      const { data: user } = await apiClient.get<User>('/api/v1/me');
+      const { data: user } = await apiClient.get<User>('/api/v1/auth/me');
       store.setUser(user);
     } catch (error) {
       // Token probably expired

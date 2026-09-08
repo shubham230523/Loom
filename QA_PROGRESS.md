@@ -1,23 +1,27 @@
 # Loom QA Progress Tracking
 
 ## Current Phase
-Phase 3: Build and Compilation Testing
+Phase 23: Regression Testing
 
 ## Completed Phases
-- Phase 1: Understand the Entire Codebase
-- Phase 2: Installation and Environment Validation
+- Phase 1-22: Full System Audit & Initial Fixes
 
 ## Commit History
 | Hash | Phase | Subsystem | Tests Executed | Status |
 |------|-------|-----------|----------------|--------|
 | - | - | - | - | - |
 
-## Discovered Issues
 | ID | Issue | Root Cause | Status | Fixed In |
 |----|-------|------------|--------|----------|
-| TS1 | Frontend TS Errors (12) | Mismatched types, unused variables, missing imports | Fixed | `qa/comprehensive-app-audit` |
-| DEP1 | Backend FastAPI Missing | `fastapi` module not found in some environments (PYTHONPATH issue) | Fixed | - |
-| TEST1 | No Automated Tests | Project lacks unit/integration tests for both front and back | Open | - |
+| TS1 | Frontend TS Errors (12) | Mismatched types, unused variables, missing imports | Fixed | `ade0ad9` |
+| NAV1 | "Skip for now" Broken | Auth guard redirected guest users back to welcome | Fixed | `ca8ad72` |
+| API1 | /me endpoint mismatch | Frontend used /api/v1/me, backend had /api/v1/auth/me | Fixed | `8b4c09d` |
+| API2 | Missing Contrib Endpoints | /workspace, /validate, /push, /pull-request missing in backend | Fixed | `8b4c09d` |
+| API3 | Path Param Mismatch | Backend endpoints missing path params in signature | Fixed | `8b4c09d` |
+| GH1 | Clone Auth Bug | Repo URL replacement failed if token was None | Fixed | `8b4c09d` |
+| WS1 | decode_token Missing | WS endpoint tried to import non-existent decode_token | Fixed | `8b4c09d` |
+| DEP1 | Backend FastAPI Missing | `fastapi` module not found in some environments | Fixed | - |
+| TEST1 | No Automated Tests | Project lacks unit/integration tests | Open | - |
 
 ## Remaining Known Issues
 - Initial audit in progress.
