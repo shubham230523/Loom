@@ -93,9 +93,9 @@ class ContributionService:
                 select(RepositoryIndex)
                 .where(RepositoryIndex.repository_id == repo.id, RepositoryIndex.status == "completed")
                 .order_by(RepositoryIndex.created_at.desc())
+                .limit(1)
             )
-            result = await db.execute(query)
-            index = result.scalar_one_or_none()
+            index = (await db.execute(query)).scalars().first()
 
             if not index:
                  raise LoomError("Repository must be indexed before planning", status_code=400)
@@ -528,9 +528,8 @@ class ContributionService:
             raise LoomError("Branch must be pushed before PR creation", status_code=400)
 
         # 2. Fetch latest test run
-        query = select(TestRun).where(TestRun.contribution_id == contribution_id).order_by(TestRun.timestamp.desc())
-        test_res = await db.execute(query)
-        latest_test = test_res.scalar_one_or_none()
+        query = select(TestRun).where(TestRun.contribution_id == contribution_id).order_by(TestRun.timestamp.desc()).limit(1)
+        latest_test = (await db.execute(query)).scalars().first()
 
         # 3. Construct PR Body
         pr_body = self._generate_pr_body(opportunity, plan, latest_test)

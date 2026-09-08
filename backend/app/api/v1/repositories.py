@@ -70,8 +70,7 @@ async def get_repository_details(
         index_query = select(RepositoryIndex).where(
             RepositoryIndex.repository_id == repo.id
         ).order_by(desc(RepositoryIndex.created_at)).limit(1)
-        index_result = await db.execute(index_query)
-        latest_index = index_result.scalar_one_or_none()
+        latest_index = (await db.execute(index_query)).scalars().first()
 
         # Fetch fresh metadata from GitHub to ensure stars/avatar are current
         client = await github_service.get_client_for_user(db, current_user)
@@ -204,16 +203,16 @@ async def discover_opportunities(
     index_query = select(RepositoryIndex).where(
         RepositoryIndex.repository_id == repo.id,
         RepositoryIndex.status == "completed"
-    )
-    index = (await db.execute(index_query)).scalar_one_or_none()
+    ).order_by(desc(RepositoryIndex.created_at)).limit(1)
+    index = (await db.execute(index_query)).scalars().first()
 
     if not index:
         # Check if indexing is already in progress
         active_index_query = select(RepositoryIndex).where(
             RepositoryIndex.repository_id == repo.id,
             RepositoryIndex.status == "in_progress"
-        )
-        active_index = (await db.execute(active_index_query)).scalar_one_or_none()
+        ).order_by(desc(RepositoryIndex.created_at)).limit(1)
+        active_index = (await db.execute(active_index_query)).scalars().first()
 
         if not active_index:
             logger.info(f"API: Triggering on-demand indexing for {repo.full_name}")
@@ -259,8 +258,8 @@ async def score_opportunity(
     index_query = select(RepositoryIndex).where(
         RepositoryIndex.repository_id == repository_id,
         RepositoryIndex.status == "completed"
-    ).order_by(RepositoryIndex.created_at.desc())
-    index = (await db.execute(index_query)).scalar_one_or_none()
+    ).order_by(desc(RepositoryIndex.created_at)).limit(1)
+    index = (await db.execute(index_query)).scalars().first()
     if not index: raise HTTPException(status_code=400, detail="Repository not indexed")
 
     client = await github_service.get_client_for_user(db, current_user)

@@ -56,7 +56,7 @@ class RepositoryIndexer:
                 RepositoryIndex.status == "completed"
             )
             result = await db.execute(query)
-            existing_completed = result.scalar_one_or_none()
+            existing_completed = result.scalars().first()
 
             if existing_completed:
                 logger.info(f"Indexer: Found completed index for {actual_sha}, cleaning up placeholder.")

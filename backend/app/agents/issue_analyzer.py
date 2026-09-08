@@ -33,9 +33,8 @@ class IssueAnalyzerAgent:
         query = select(RepositoryIndex).where(
             RepositoryIndex.repository_id == repository.id,
             RepositoryIndex.status == "completed"
-        ).order_by(RepositoryIndex.created_at.desc())
-        result = await db.execute(query)
-        index = result.scalar_one_or_none()
+        ).order_by(RepositoryIndex.created_at.desc()).limit(1)
+        index = (await db.execute(query)).scalars().first()
 
         repo_summary = ""
         if index and index.summary:
