@@ -32,11 +32,15 @@ class GitHubService:
 
             return data["access_token"]
 
-    async def get_client_for_user(self, db: AsyncSession, user: User) -> GitHubClient:
+    async def get_client_for_user(self, db: AsyncSession, user: Optional[User] = None) -> GitHubClient:
         """
         Retrieves the GitHub access token for a user, decrypts it,
         and returns an authenticated GitHubClient.
+        If no user is provided, returns a public (unauthenticated) client.
         """
+        if not user:
+            return GitHubClient(None)
+
         query = select(GitHubAccount).where(GitHubAccount.user_id == user.id)
         result = await db.execute(query)
         account = result.scalar_one_or_none()

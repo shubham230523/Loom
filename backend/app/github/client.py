@@ -6,15 +6,17 @@ from backend.app.api.errors import LoomError, RateLimitError, AuthenticationErro
 from backend.app.utils.logging import logger
 
 class GitHubClient:
-    def __init__(self, access_token: str):
+    def __init__(self, access_token: Optional[str] = None):
         self.access_token = access_token
         self.base_url = settings.GITHUB_API_URL
         self.headers = {
-            "Authorization": f"Bearer {access_token}",
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
             "User-Agent": "Loom-API"
         }
+        if access_token:
+            self.headers["Authorization"] = f"Bearer {access_token}"
+
         self.timeout = 15.0
 
     async def request(

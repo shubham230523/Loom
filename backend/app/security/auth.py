@@ -53,3 +53,22 @@ async def get_current_user(
         raise AuthenticationError("User not found")
 
     return user
+
+async def get_optional_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db)
+) -> Optional[User]:
+    if not token:
+        return None
+
+    try:
+        payload = session_manager.decode_token(token)
+        user_id = payload.get("sub")
+        if not user_id:
+            return None
+
+        query = select(User).where(User.id == user_id)
+        result = await db.execute(query)
+        return result.scalar_one_or_none()
+    except Exception:
+        return None

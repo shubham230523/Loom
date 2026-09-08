@@ -6,7 +6,7 @@ from typing import Optional, List, Any
 from uuid import UUID
 
 from backend.app.database import get_db, User, Repository, RepositoryIndex, Issue, Contribution
-from backend.app.security.auth import get_current_user
+from backend.app.security.auth import get_current_user, get_optional_current_user
 from backend.app.github.service import github_service
 from backend.app.ai import semantic_search_service
 from backend.app.repository.issue_service import issue_service
@@ -26,7 +26,7 @@ async def search_repositories(
     language: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     per_page: int = Query(30, ge=1, le=100),
-    current_user: User = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_optional_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Searches for GitHub repositories."""
@@ -39,7 +39,7 @@ async def search_repositories(
 @router.get("/{repository_id}")
 async def get_repository_details(
     repository_id: str,
-    current_user: User = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_optional_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Retrieves detailed info, handling both Loom UUIDs and GitHub IDs."""
