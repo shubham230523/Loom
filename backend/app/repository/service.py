@@ -108,9 +108,11 @@ class RepositoryService:
 
         except Exception as e:
             if not isinstance(e, LoomError):
-                logger.error(f"Unexpected error during clone: {str(e)}")
+                import traceback
+                error_details = traceback.format_exc()
+                logger.error(f"Unexpected error during clone: {str(e)}\n{error_details}")
                 await workspace.cleanup()
-                raise LoomError(f"Repository clone failed: {str(e)}", status_code=500)
+                raise LoomError(f"Repository clone failed: {str(e) or type(e).__name__}", status_code=500)
             raise
 
     async def get_current_commit_sha(self, workspace: Workspace) -> str:

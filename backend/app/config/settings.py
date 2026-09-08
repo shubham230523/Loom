@@ -1,3 +1,4 @@
+import os
 from typing import Optional, List
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, field_validator
@@ -97,7 +98,7 @@ class Settings(BaseSettings):
     MODEL_PR_GENERATION: Optional[str] = None
 
     # Workspace & Cloning Settings
-    WORKSPACE_BASE_DIR: str = "/tmp/loom-workspaces"
+    WORKSPACE_BASE_DIR: str = os.path.join(os.getcwd(), "loom-workspaces")
     MAX_REPO_SIZE_MB: int = 500
     CLONE_TIMEOUT_SECONDS: int = 300  # 5 minutes
 

@@ -53,6 +53,10 @@ export default function RepositoryDetailsScreen() {
         queryClient.invalidateQueries({ queryKey: ['opportunities', loomId] });
       }
     },
+    onError: (error: any) => {
+      console.error('Discovery failed:', error);
+      Alert.alert('Discovery Failed', error.message || 'An unexpected error occurred during opportunity discovery.');
+    }
   });
 
   // 4. Scoring Mutation
@@ -136,9 +140,9 @@ export default function RepositoryDetailsScreen() {
             console.log('Back pressed');
             router.back();
           }}
-          className="w-10 h-10 items-center justify-center rounded-full bg-muted active:bg-muted/80"
+          className="w-10 h-10 items-center justify-center rounded-full bg-slate-200 active:bg-slate-300"
         >
-          <Text style={{ color: theme.text, fontSize: 24, fontWeight: 'bold' }}>←</Text>
+          <Text className="text-slate-900 text-2xl font-bold leading-none">←</Text>
         </Pressable>
         <View className="flex-1 items-center mr-10">
           <Text weight="bold" className="text-lg">{repo?.name}</Text>
@@ -172,15 +176,17 @@ export default function RepositoryDetailsScreen() {
             variant={repo.is_imported ? "default" : "secondary"}
             loading={initializeMutation.isPending || discoverMutation.isPending}
             label={
-              repo.indexing_status === 'in_progress'
-                ? "Analyzing Codebase..."
-                : initializeMutation.isPending
-                  ? "Adding to Loom..."
-                  : discoverMutation.isPending
-                    ? "Discovering..."
-                    : repo.is_imported
-                      ? "Discover Opportunities"
-                      : "Add to Loom"
+              repo.indexing_status === 'failed'
+                ? "Analysis Failed - Retry"
+                : repo.indexing_status === 'in_progress'
+                  ? "Analyzing Codebase..."
+                  : initializeMutation.isPending
+                    ? "Adding to Loom..."
+                    : discoverMutation.isPending
+                      ? "Discovering..."
+                      : repo.is_imported
+                        ? "Discover Opportunities"
+                        : "Add to Loom"
             }
             onPress={handleDiscover}
             disabled={

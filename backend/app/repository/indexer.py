@@ -131,7 +131,21 @@ class RepositoryIndexer:
             return index
 
         except Exception as e:
-            await db.rollback()
+            # Try to mark the index as failed
+            try:
+                index_query = select(RepositoryIndex).where(
+                    RepositoryIndex.repository_id == repository.id,
+                    RepositoryIndex.status == "in_progress"
+                ).order_by(RepositoryIndex.created_at.desc())
+                idx_res = await db.execute(index_query)
+                idx = idx_res.scalar_one_or_none()
+                if idx:
+                    idx.status = "failed"
+                    idx.error_info = str(e)
+                await db.commit()
+            except Exception:
+                await db.rollback()
+
             logger.error(f"Failed to index repository: {str(e)}")
             raise LoomError(f"Indexing failed: {str(e)}", status_code=500)
         finally:
