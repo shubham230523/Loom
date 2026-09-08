@@ -1,7 +1,6 @@
 import { useLocalSearchParams, Stack, useRouter } from 'expo-router';
 import { View, Image, Linking, Pressable, Alert } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { SymbolView } from 'expo-symbols';
 import { ScreenContainer } from '@/components/ui/screen-container';
 import { Text } from '@/components/ui/text';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,13 +11,11 @@ import { ErrorState } from '@/components/ui/error-state';
 import { RepositoryService } from '@/services/repository.service';
 import { OpportunityService } from '@/services/opportunity.service';
 import { ContributionService } from '@/services/contribution.service';
-import { useTheme } from '@/hooks/use-theme';
 import { OpportunityCard } from '@/components/opportunity-card';
 import { LoadingIndicator } from '@/components/ui/loading-indicator';
 
 export default function RepositoryDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const theme = useTheme();
   const router = useRouter();
   const queryClient = useQueryClient();
 
@@ -27,9 +24,9 @@ export default function RepositoryDetailsScreen() {
     queryKey: ['repository', id],
     queryFn: () => RepositoryService.getById(id!),
     enabled: !!id,
-    refetchInterval: (data) => {
+    refetchInterval: (query) => {
       // Poll if indexing is in progress
-      return data?.indexing_status === 'in_progress' ? 3000 : false;
+      return query.state.data?.indexing_status === 'in_progress' ? 3000 : false;
     }
   });
 

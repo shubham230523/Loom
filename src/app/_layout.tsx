@@ -30,8 +30,10 @@ export default function RootLayout() {
   useEffect(() => {
     if (isLoading) return;
 
-    const inAuthGroup = segments[0] === '(tabs)' || segments[0] === 'repository' || segments[0] === 'contribution' || segments[0] === 'settings';
-    const isPublicScreen = segments[0] === 'welcome' || segments[0] === undefined || segments[0] === '(index)';
+    // Type casting to avoid TS error on '(index)' if needed,
+    // but better to just check segments[0] as string | undefined
+    const seg0 = segments[0] as string | undefined;
+    const isPublicScreen = seg0 === 'welcome' || seg0 === undefined || seg0 === 'index';
 
     if (isAuthenticated && isPublicScreen) {
       // Redirect to home if logged in and trying to access landing/auth screens

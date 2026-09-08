@@ -1,6 +1,5 @@
 import { useState, useCallback } from 'react';
 import { View, Pressable, FlatList, Image } from 'react-native';
-import { SymbolView } from 'expo-symbols';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { ScreenContainer } from '@/components/ui/screen-container';
@@ -11,12 +10,10 @@ import { LoadingState } from '@/components/ui/loading-state';
 import { ErrorState } from '@/components/ui/error-state';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { useTheme } from '@/hooks/use-theme';
 import { RepositoryService } from '@/services/repository.service';
 import { GitHubRepository } from '@/types/repository';
 
 export default function DiscoverScreen() {
-  const theme = useTheme();
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);

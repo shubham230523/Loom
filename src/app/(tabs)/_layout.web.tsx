@@ -119,7 +119,8 @@ function SidebarItem({ name, icon, label, isFocused }: { name: string; icon: SFS
     if (name === 'settings') {
       router.push('/settings');
     } else {
-      router.push(`/(tabs)/${name}`);
+      // Cast to any to bypass Expo Router's strict path typing for dynamic routes
+      router.push(`/(tabs)/${name}` as any);
     }
   };
 

@@ -1,3 +1,5 @@
+import { useAuthStore } from '@/store/auth-store';
+
 export type AgentEventType =
   | 'agent_started'
   | 'step_started'
