@@ -32,7 +32,7 @@ class SolutionPlanOutput(BaseModel):
     )
     testing_strategy: str = Field(
         description="How to verify the fix or implementation",
-        validation_alias=AliasChoices("testing_strategy", "testingStrategy", "validation", "verification", "testing", "success_criteria", "successCriteria", "verification_steps"),
+        validation_alias=AliasChoices("testing_strategy", "testingStrategy", "validation", "verification", "testing", "success_criteria", "successCriteria", "verification_steps", "verification_criteria"),
         default="Verify manually after implementation"
     )
     risks: str = Field(
@@ -170,6 +170,17 @@ class SolutionPlannerAgent:
 
         Identify the root cause within the existing structure and provide precise implementation steps.
         DO NOT provide actual code changes, only the technical PLAN.
+
+        Your response MUST be a JSON object with the following fields:
+        - problem: Summary of the technical problem.
+        - root_cause: Why this issue exists.
+        - relevant_files: List of paths to files involved.
+        - relevant_symbols: List of classes/functions involved.
+        - implementation_steps: List of strings for the plan.
+        - testing_strategy: How to verify.
+        - risks: Potential challenges.
+        - expected_diff_size: Small, Medium, or Large.
+        - confidence: 0.0 to 1.0.
         """
 
         request = ChatRequest(

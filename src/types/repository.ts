@@ -15,7 +15,9 @@ export interface GitHubRepository {
   default_branch: string;
   updated_at: string;
   is_imported?: boolean;
-  indexing_status?: 'pending' | 'in_progress' | 'completed' | 'failed' | null;
+  indexing_status?: 'pending' | 'in_progress' | 'completed' | 'failed' | 'not_started' | null;
+  discovery_status?: 'pending' | 'discovering' | 'completed' | 'failed' | null;
+  discovery_error?: string | null;
 }
 
 export interface SearchRepositoriesResponse {

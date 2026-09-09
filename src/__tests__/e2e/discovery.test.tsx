@@ -1,7 +1,5 @@
-import React from 'react';
-import { render, fireEvent, waitFor } from '@testing-library/react-native';
+import { render, fireEvent } from '@testing-library/react-native';
 import DiscoverScreen from '../../app/(tabs)/discover';
-import { RepositoryService } from '../../services/repository.service';
 
 // Mock the RepositoryService
 jest.mock('../../services/repository.service', () => ({

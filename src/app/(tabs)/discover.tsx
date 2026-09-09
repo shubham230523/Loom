@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { View, Pressable, FlatList, Image } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
@@ -29,7 +29,7 @@ export default function DiscoverScreen() {
     []
   );
 
-  const { data, isLoading, error, isError, refetch, isFetching } = useQuery({
+  const { data, error, isError, refetch, isFetching } = useQuery({
     queryKey: ['repositories', debouncedQuery, page],
     queryFn: () => RepositoryService.search({ q: debouncedQuery || 'stars:>1000', page }),
     enabled: true,

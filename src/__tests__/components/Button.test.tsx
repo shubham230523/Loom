@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, fireEvent } from '@testing-library/react-native';
 import { Button } from '../../components/ui/button';
 
@@ -17,7 +16,7 @@ describe('Button Component', () => {
   });
 
   it('should show activity indicator when loading', () => {
-    const { queryByText, getByTestId } = render(<Button label="Load" loading />);
+    const { queryByText } = render(<Button label="Load" loading />);
 
     // Label should not be visible
     expect(queryByText('Load')).toBeNull();
@@ -28,7 +27,7 @@ describe('Button Component', () => {
 
   it('should be disabled when loading', () => {
     const onPressMock = jest.fn();
-    const { getByText } = render(<Button label="Disabled" loading onPress={onPressMock} />);
+    render(<Button label="Disabled" loading onPress={onPressMock} />);
 
     // Pressable wrapper should have disabled prop or just not trigger
     // fireEvent.press(getByText(...)) won't work if text isn't there.
