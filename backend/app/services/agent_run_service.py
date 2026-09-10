@@ -41,41 +41,54 @@ class AgentRunService:
         message: str,
         metadata: Optional[Dict[str, Any]] = None
     ):
-        event = AgentEvent(
-            agent_run_id=agent_run_id,
-            event_type=event_type,
-            message=message,
-            event_metadata=metadata
-        )
-        db.add(event)
-        await db.commit()
+        try:
+            event = AgentEvent(
+                agent_run_id=agent_run_id,
+                event_type=event_type,
+                message=message,
+                event_metadata=metadata
+            )
+            db.add(event)
+            await db.commit()
+        except Exception as e:
+            logger.error(f"Failed to persist agent event: {str(e)}")
+            # Don't let logging failure crash the process
+            await db.rollback()
 
-        # Broadcast via WebSocket
-        payload = {
-            "agent_run_id": str(agent_run_id),
-            "event_type": event_type,
-            "message": message,
-            "metadata": metadata,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
-        await agent_broadcaster.broadcast(str(agent_run_id), payload)
+        # Broadcast via WebSocket (even if DB persistence failed)
+        try:
+            payload = {
+                "agent_run_id": str(agent_run_id),
+                "event_type": event_type,
+                "message": message,
+                "metadata": metadata,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+            await agent_broadcaster.broadcast(str(agent_run_id), payload)
+        except Exception as e:
+            logger.error(f"Failed to broadcast agent event: {str(e)}")
+
         logger.info(f"Agent Event Emitted: {event_type} - {message}")
 
     async def complete_run(self, db: AsyncSession, agent_run_id: UUID, success: bool = True):
-        query = select(AgentRun).where(AgentRun.id == agent_run_id)
-        result = await db.execute(query)
-        run = result.scalars().first()
+        try:
+            query = select(AgentRun).where(AgentRun.id == agent_run_id)
+            result = await db.execute(query)
+            run = result.scalars().first()
 
-        if run:
-            run.status = "completed" if success else "failed"
-            run.completed_at = datetime.now(timezone.utc)
-            await db.commit()
+            if run:
+                run.status = "completed" if success else "failed"
+                run.completed_at = datetime.now(timezone.utc)
+                await db.commit()
+        except Exception as e:
+            logger.error(f"Failed to complete agent run {agent_run_id}: {str(e)}")
+            await db.rollback()
 
-            await self.emit_event(
-                db=db,
-                agent_run_id=agent_run_id,
-                event_type="completed" if success else "failed",
-                message=f"Agent execution {'completed successfully' if success else 'failed'}."
-            )
+        await self.emit_event(
+            db=db,
+            agent_run_id=agent_run_id,
+            event_type="completed" if success else "failed",
+            message=f"Agent execution {'completed successfully' if success else 'failed'}."
+        )
 
 agent_run_service = AgentRunService()

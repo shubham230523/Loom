@@ -186,7 +186,15 @@ class RepositoryService:
                 raise LoomError(f"Workspace is on branch {current_branch}, expected {branch_name}")
 
             # 2. Setup authenticated remote URL for push
-            authenticated_url = repo_url.replace("https://", f"https://{access_token}@")
+            # Standardizing URL to HTTPS for token usage if it's an SSH URL
+            base_url = repo_url
+            if base_url.startswith("git@github.com:"):
+                base_url = base_url.replace("git@github.com:", "https://github.com/")
+
+            # Using the x-access-token format which is recommended for GitHub OAuth tokens
+            authenticated_url = base_url.replace("https://", f"https://x-access-token:{access_token}@")
+            if not authenticated_url.endswith(".git"):
+                authenticated_url += ".git"
 
             # 3. Commit changes
             await self._run_git_command(["git", "add", "."], cwd=workspace.path)
@@ -200,9 +208,9 @@ class RepositoryService:
             returncode, stdout, stderr = await self._run_git_command(cmd, cwd=workspace.path)
 
             if returncode != 0:
-                logger.error(f"Git push failed: {stderr}")
+                logger.error(f"Git push failed (code {returncode}). stderr: {stderr}")
                 if "401" in stderr or "403" in stderr:
-                    raise LoomError("GitHub authentication failed during push", status_code=403)
+                    raise LoomError(f"GitHub authentication failed during push: {stderr}", status_code=403)
                 raise LoomError(f"Failed to push branch: {stderr}", status_code=500)
 
             logger.info(f"Successfully pushed branch {branch_name} to remote.")

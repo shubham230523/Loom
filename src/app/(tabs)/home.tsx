@@ -1,4 +1,4 @@
-import { View } from 'react-native';
+import { View, Switch } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ScreenContainer } from '@/components/ui/screen-container';
 import { Text } from '@/components/ui/text';
@@ -6,14 +6,34 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Divider } from '@/components/ui/divider';
 import { Button } from '@/components/ui/button';
+import { useSettingsStore } from '@/store/settings-store';
+import { useTheme } from '@/hooks/use-theme';
 
 export default function HomeScreen() {
   const router = useRouter();
+  const { isMockMode, setMockMode } = useSettingsStore();
+  const theme = useTheme();
+
   return (
     <ScreenContainer scrollable className="pt-16 pb-6" maxWidth={1200}>
-      <View className="mb-8">
-        <Text variant="title">Dashboard</Text>
-        <Text variant="muted">Overview of your autonomous collaboration.</Text>
+      <View className="flex-row justify-between items-start mb-8">
+        <View>
+          <Text variant="title">Dashboard</Text>
+          <Text variant="muted">Overview of your autonomous collaboration.</Text>
+        </View>
+
+        <Card className="px-4 py-2 flex-row items-center gap-3">
+          <View>
+            <Text weight="bold" variant="small">Mock Mode</Text>
+            <Text variant="small" className="text-muted-foreground">Demo flow only</Text>
+          </View>
+          <Switch
+            value={isMockMode}
+            onValueChange={setMockMode}
+            trackColor={{ false: '#767577', true: theme.primary }}
+            thumbColor={isMockMode ? '#f4f3f4' : '#f4f3f4'}
+          />
+        </Card>
       </View>
 
       <View className="flex-col lg:flex-row gap-8">

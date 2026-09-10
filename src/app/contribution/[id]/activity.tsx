@@ -18,12 +18,35 @@ export default function AgentActivityScreen() {
   const router = useRouter();
 
   // 1. WebSocket Hook
-  const { events, lastEvent } = useAgentEvents(agentRunId);
+  const { events: realEvents, lastEvent: realLastEvent } = useAgentEvents(agentRunId);
+
+  // Dummy events for testing
+  const dummyEvents: any[] = [
+    { agent_run_id: 'dummy-run-456', event_type: 'agent_started', message: 'Coder agent started execution.', timestamp: new Date(Date.now() - 30000).toISOString() },
+    { agent_run_id: 'dummy-run-456', event_type: 'step_started', message: 'Restoring workspace...', timestamp: new Date(Date.now() - 25000).toISOString() },
+    { agent_run_id: 'dummy-run-456', event_type: 'step_completed', message: 'Workspace restored.', timestamp: new Date(Date.now() - 20000).toISOString() },
+    { agent_run_id: 'dummy-run-456', event_type: 'step_started', message: 'Applying implementation changes (Attempt 1)', timestamp: new Date(Date.now() - 15000).toISOString() },
+    { agent_run_id: 'dummy-run-456', event_type: 'file_changed', message: 'Modified src/services/auth.service.ts', timestamp: new Date(Date.now() - 12000).toISOString() },
+    { agent_run_id: 'dummy-run-456', event_type: 'file_changed', message: 'Modified src/services/api-client.ts', timestamp: new Date(Date.now() - 10000).toISOString() },
+    { agent_run_id: 'dummy-run-456', event_type: 'test_completed', message: 'Implementation tests passed.', timestamp: new Date(Date.now() - 8000).toISOString() },
+    { agent_run_id: 'dummy-run-456', event_type: 'review_started', message: 'Triggering autonomous technical audit.', timestamp: new Date(Date.now() - 5000).toISOString() },
+    { agent_run_id: 'dummy-run-456', event_type: 'review_completed', message: 'Review finished: APPROVE', timestamp: new Date(Date.now() - 2000).toISOString() },
+    { agent_run_id: 'dummy-run-456', event_type: 'completed', message: 'Agent execution completed successfully.', timestamp: new Date(Date.now() - 1000).toISOString() },
+  ];
+
+  const events = agentRunId === 'dummy-run-456' ? dummyEvents : realEvents;
+  const lastEvent = agentRunId === 'dummy-run-456' ? dummyEvents[dummyEvents.length - 1] : realLastEvent;
 
   // 2. Poll for contribution status (as fallback/final state)
   const { data: contribution } = useQuery({
     queryKey: ['contribution-activity', id],
     queryFn: async () => {
+      if (id === 'dummy-contrib-123') {
+        return {
+          id,
+          status: 'completed' // Force completed for dummy
+        } as any;
+      }
       const { data } = await apiClient.get<Contribution>(`/api/v1/repositories/${repositoryId}/contributions/${id}`);
       return data;
     },

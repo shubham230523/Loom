@@ -1,5 +1,10 @@
 import re
 import json
+import os
+import uuid
+import asyncio
+import datetime
+from datetime import datetime as dt, timezone
 from typing import List, Dict, Any, Optional
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -122,26 +127,40 @@ class ContributionService:
             await agent_run_service.emit_event(db, agent_run.id, "step_completed", "Solution blueprint generated.")
 
             # 5. Persist Plan
-            # Check for existing plan
+            # Check for existing plan to avoid UniqueViolationError
             query = select(SolutionPlan).where(SolutionPlan.contribution_id == contribution_id)
-            existing_plan = (await db.execute(query)).scalars().first()
-            if existing_plan:
-                await db.delete(existing_plan)
+            plan = (await db.execute(query)).scalars().first()
 
-            plan = SolutionPlan(
-                contribution_id=contribution_id,
-                problem=plan_output.problem,
-                root_cause=plan_output.root_cause,
-                relevant_files=plan_output.relevant_files,
-                relevant_symbols=plan_output.relevant_symbols,
-                implementation_steps=plan_output.implementation_steps,
-                testing_strategy=plan_output.testing_strategy,
-                risks=plan_output.risks,
-                expected_diff_size=plan_output.expected_diff_size,
-                confidence=plan_output.confidence,
-                status="pending"
-            )
-            db.add(plan)
+            if plan:
+                # Update existing plan
+                plan.problem = plan_output.problem
+                plan.root_cause = plan_output.root_cause
+                plan.relevant_files = plan_output.relevant_files
+                plan.relevant_symbols = plan_output.relevant_symbols
+                plan.implementation_steps = plan_output.implementation_steps
+                plan.testing_strategy = plan_output.testing_strategy
+                plan.risks = plan_output.risks
+                plan.expected_diff_size = plan_output.expected_diff_size
+                plan.confidence = plan_output.confidence
+                plan.status = "pending"
+                plan.updated_at = dt.now(timezone.utc)
+            else:
+                # Create new plan
+                plan = SolutionPlan(
+                    contribution_id=contribution_id,
+                    problem=plan_output.problem,
+                    root_cause=plan_output.root_cause,
+                    relevant_files=plan_output.relevant_files,
+                    relevant_symbols=plan_output.relevant_symbols,
+                    implementation_steps=plan_output.implementation_steps,
+                    testing_strategy=plan_output.testing_strategy,
+                    risks=plan_output.risks,
+                    expected_diff_size=plan_output.expected_diff_size,
+                    confidence=plan_output.confidence,
+                    status="pending"
+                )
+                db.add(plan)
+
             await db.commit()
             await db.refresh(plan)
 
@@ -153,8 +172,16 @@ class ContributionService:
                 "plan": plan
             }
         except Exception as e:
-            await agent_run_service.emit_event(db, agent_run.id, "failed", f"Planning failed: {str(e)}")
-            await agent_run_service.complete_run(db, agent_run.id, success=False)
+            # Important: Rollback the session to clear any IntegrityErrors/poisoned transactions
+            await db.rollback()
+
+            # Re-fetch agent_run if needed or just use ID to emit failure
+            try:
+                await agent_run_service.emit_event(db, agent_run.id, "failed", f"Planning failed: {str(e)}")
+                await agent_run_service.complete_run(db, agent_run.id, success=False)
+            except Exception as inner_e:
+                logger.error(f"Failed to log planning failure: {str(inner_e)}")
+
             raise e
 
     async def setup_contribution_workspace(
@@ -633,5 +660,141 @@ class ContributionService:
         await db.commit()
         await db.refresh(plan)
         return plan
+
+    async def execute_mock_implementation(
+        self,
+        db: AsyncSession,
+        contribution_id: UUID,
+        client: GitHubClient
+    ) -> Dict[str, Any]:
+        """
+        Performs a 'Real-World Mock' implementation:
+        1. Clones the repo (AIMastery)
+        2. Performs a hardcoded file edit
+        3. Pushes to a new branch
+        4. Creates a real PR
+        """
+        # 1. Fetch context
+        query = (
+            select(Contribution, Repository)
+            .join(Repository, Contribution.repository_id == Repository.id)
+            .where(Contribution.id == contribution_id)
+        )
+        result = await db.execute(query)
+        row = result.first()
+        if not row:
+             # If it's the dummy contribution, we might need to handle it specially
+             # or ensure a real record exists for shubham230523/AIMastery
+             raise LoomError("Contribution context not found", status_code=404)
+
+        contribution, repo = row
+
+        # 2. Setup Workspace
+        workspace = Workspace()
+        try:
+            await agent_run_service.create_agent_run(db, contribution_id, "coder")
+
+            # Log current user for debugging push permissions
+            try:
+                gh_user = await github_service.get_user_profile(client.access_token)
+                gh_username = gh_user['login']
+                logger.info(f"Mock Implementation: Authenticated as GitHub user '{gh_username}'")
+            except Exception as e:
+                logger.error(f"Mock Implementation: Failed to get user profile: {str(e)}")
+                gh_username = "unknown"
+
+            # 2.1 Fork the repository if we don't have write access (standard OSS flow)
+            logger.info(f"Mock Implementation: Forking '{repo.full_name}' for user '{gh_username}'")
+            try:
+                fork_data = await github_service.fork_repository(client, repo.owner, repo.name)
+                fork_url = fork_data['html_url']
+                logger.info(f"Mock Implementation: Successfully created/verified fork at {fork_url}")
+                # Wait a bit for GitHub to provision the fork
+                await asyncio.sleep(2)
+            except Exception as e:
+                logger.error(f"Mock Implementation: Forking failed, attempting direct push (might fail): {str(e)}")
+                fork_url = repo.html_url
+
+            # Generate a fixed branch name based on timestamp to avoid conflicts
+            timestamp = dt.now().strftime("%Y%m%d%H%M%S")
+            branch_name = f"ai/mock-fix-{timestamp}"
+
+            await repository_service.clone_repository(
+                repo_url=fork_url,
+                access_token=client.access_token,
+                workspace=workspace
+            )
+            await repository_service.create_contribution_branch(workspace, branch_name)
+
+            # 3. Hardcoded Edit (Adding a test fix file)
+            fix_path = workspace.path / "src" / "services" / "mock-auth-fix.ts"
+            os.makedirs(fix_path.parent, exist_ok=True)
+
+            with open(fix_path, "w") as f:
+                f.write("""
+/**
+ * AUTO-GENERATED MOCK FIX
+ * This file demonstrates a synchronization lock for token refresh.
+ */
+export class MockAuthService {
+  private static isRefreshing = false;
+  private static refreshPromise: Promise<string> | null = null;
+
+  static async refreshSession(): Promise<string> {
+    if (this.isRefreshing) {
+      console.log('[Mock] Using in-flight refresh promise');
+      return this.refreshPromise!;
+    }
+
+    console.log('[Mock] Starting new refresh cycle');
+    this.isRefreshing = true;
+    this.refreshPromise = new Promise((resolve) => {
+      setTimeout(() => {
+        this.isRefreshing = false;
+        resolve('new-mock-token-' + Date.now());
+      }, 1000);
+    });
+
+    return this.refreshPromise;
+  }
+}
+""")
+
+            # 4. Commit & Push
+            await repository_service.push_contribution(
+                workspace=workspace,
+                branch_name=branch_name,
+                access_token=client.access_token,
+                repo_url=fork_url
+            )
+
+            # 5. Create PR (from fork to upstream)
+            # The 'head' parameter for cross-repo PRs must be 'user:branch'
+            pr_head = f"{gh_username}:{branch_name}"
+
+            pr_data = await github_service.create_pull_request(
+                client=client,
+                owner=repo.owner,
+                repo=repo.name,
+                title=f"Loom (Mock): Refactor User Authentication Loop",
+                body="This is an automated mock contribution to demonstrate Loom's PR orchestration.\n\n### Changes\n- Added `src/services/mock-auth-fix.ts` with a thread-safe refresh mechanism.",
+                head=pr_head,
+                base=repo.default_branch
+            )
+
+            contribution.status = "pull_request_created"
+            contribution.branch_name = branch_name
+            await db.commit()
+
+            return {
+                "status": "success",
+                "pr_url": pr_data["html_url"],
+                "branch": branch_name
+            }
+
+        except Exception as e:
+            logger.error(f"Mock implementation failed: {str(e)}")
+            await workspace.cleanup()
+            raise e
 
 contribution_service = ContributionService()

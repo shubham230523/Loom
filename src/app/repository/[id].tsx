@@ -14,11 +14,15 @@ import { OpportunityService } from '@/services/opportunity.service';
 import { ContributionService } from '@/services/contribution.service';
 import { OpportunityCard } from '@/components/opportunity-card';
 import { LoadingIndicator } from '@/components/ui/loading-indicator';
+import { useSettingsStore } from '@/store/settings-store';
+
+const DUMMY_OPPORTUNITY_ID = 'dummy-opp-123';
 
 export default function RepositoryDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { isMockMode } = useSettingsStore();
 
   // 1. Fetch Repository Metadata
   const { data: repo, isLoading: isRepoLoading, isError: isRepoError, error: repoError, refetch: refetchRepo } = useQuery({
@@ -40,11 +44,43 @@ export default function RepositoryDetailsScreen() {
   const loomId = repo?.loom_id; // This will be the UUID if imported
 
   // 2. Fetch Opportunities (only if imported)
-  const { data: opportunities, isLoading: isOppsLoading, refetch: refetchOpps } = useQuery({
+  const { data: opportunitiesResponse, isLoading: isOppsLoading, refetch: refetchOpps } = useQuery({
     queryKey: ['opportunities', loomId],
     queryFn: () => OpportunityService.list(loomId!),
     enabled: !!loomId,
   });
+
+  // Inject dummy opportunity for testing ONLY if in mock mode
+  const opportunities = opportunitiesResponse ? [
+    ...opportunitiesResponse,
+    ...(isMockMode ? [{
+      id: DUMMY_OPPORTUNITY_ID,
+      repository_id: loomId || '',
+      title: '[TEST] Refactor User Authentication Loop',
+      description: 'The current auth loop has a race condition during token refresh. This task implements a lock mechanism to prevent multiple simultaneous refreshes.',
+      type: 'refactor',
+      impact: 'High',
+      difficulty: 'Intermediate',
+      confidence: 0.95,
+      score: 85,
+      status: 'pending',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    } as any] : [])
+  ] : (isMockMode && loomId ? [{
+    id: DUMMY_OPPORTUNITY_ID,
+    repository_id: loomId,
+    title: '[TEST] Refactor User Authentication Loop',
+    description: 'The current auth loop has a race condition during token refresh. This task implements a lock mechanism to prevent multiple simultaneous refreshes.',
+    type: 'refactor',
+    impact: 'High',
+    difficulty: 'Intermediate',
+    confidence: 0.95,
+    score: 85,
+    status: 'pending',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  } as any] : null);
 
   // Watch for discovery completion to refetch opportunities
   useEffect(() => {
@@ -113,6 +149,14 @@ export default function RepositoryDetailsScreen() {
   };
 
   const handleStartContribution = async (oppId: string) => {
+    if (isMockMode && oppId === DUMMY_OPPORTUNITY_ID) {
+      router.push({
+        pathname: '/contribution/[id]/plan',
+        params: { id: 'dummy-contrib-123', repositoryId: loomId! }
+      });
+      return;
+    }
+
     try {
       const contribution = await ContributionService.start(loomId!, oppId);
       router.push({

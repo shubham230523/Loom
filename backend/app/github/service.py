@@ -207,4 +207,10 @@ class GitHubService:
         }
         return await client.post(f"/repos/{owner}/{repo}/pulls", json_data=payload)
 
+    async def fork_repository(self, client: GitHubClient, owner: str, repo: str) -> Dict[str, Any]:
+        """
+        Forks a repository for the authenticated user.
+        """
+        return await client.post(f"/repos/{owner}/{repo}/forks")
+
 github_service = GitHubService()

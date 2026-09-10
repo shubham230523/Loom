@@ -336,3 +336,13 @@ async def push_contribution(repository_id: UUID, contribution_id: UUID, current_
 async def create_pull_request(repository_id: UUID, contribution_id: UUID, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     client = await github_service.get_client_for_user(db, current_user)
     return await contribution_service.create_github_pr(db, contribution_id, client)
+
+@router.post("/{repository_id}/contributions/{contribution_id}/mock-implement")
+async def execute_mock_implementation(
+    repository_id: UUID,
+    contribution_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    client = await github_service.get_client_for_user(db, current_user)
+    return await contribution_service.execute_mock_implementation(db, contribution_id, client)

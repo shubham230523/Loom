@@ -2,5 +2,6 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/loom-workspaces/f7b67672-8292-4d75-930a-2837bb0334ef" vcs="Git" />
   </component>
 </project>

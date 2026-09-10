@@ -11,7 +11,7 @@ export function useAgentEvents(agentRunId?: string) {
   }, []);
 
   useEffect(() => {
-    if (!agentRunId) return;
+    if (!agentRunId || agentRunId.startsWith('dummy-')) return;
 
     agentWsService.connect(agentRunId, handleEvent);
 

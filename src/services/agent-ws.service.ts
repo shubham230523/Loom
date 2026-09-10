@@ -39,7 +39,9 @@ class AgentWebSocketService {
 
     const token = useAuthStore.getState().token;
     if (!token) {
-      console.error('No auth token available for WebSocket connection');
+      if (!agentRunId.startsWith('dummy-')) {
+        console.warn('No auth token available for WebSocket connection');
+      }
       return;
     }
 

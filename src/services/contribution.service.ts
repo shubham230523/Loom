@@ -50,4 +50,9 @@ export class ContributionService {
     const { data } = await apiClient.post<{ id: number, number: number, url: string, title: string }>(`/api/v1/repositories/${repositoryId}/contributions/${contributionId}/pull-request`);
     return data;
   }
+
+  static async executeMockImplementation(repositoryId: string, contributionId: string): Promise<{ status: string, pr_url: string, branch: string }> {
+    const { data } = await apiClient.post<{ status: string, pr_url: string, branch: string }>(`/api/v1/repositories/${repositoryId}/contributions/${contributionId}/mock-implement`);
+    return data;
+  }
 }

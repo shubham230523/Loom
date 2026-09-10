@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { View } from 'react-native';
+import { View, Alert, Linking } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { SymbolView } from 'expo-symbols';
 import { ScreenContainer } from '@/components/ui/screen-container';
@@ -13,16 +13,49 @@ import { ErrorState } from '@/components/ui/error-state';
 import { ContributionService } from '@/services/contribution.service';
 import { useTheme } from '@/hooks/use-theme';
 import { useAgentEvents } from '@/hooks/use-agent-events';
+import { useSettingsStore } from '@/store/settings-store';
 
 export default function SolutionPlanScreen() {
   const { id, repositoryId } = useLocalSearchParams<{ id: string, repositoryId: string }>();
   const theme = useTheme();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { isMockMode } = useSettingsStore();
 
   const { data: planResponse, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['solution-plan', id],
-    queryFn: () => ContributionService.generatePlan(repositoryId!, id!),
+    queryFn: async () => {
+      if (isMockMode && id === 'dummy-contrib-123') {
+        // Return dummy data immediately for testing
+        return {
+          agent_run_id: 'dummy-run-456',
+          plan: {
+            id: 'dummy-plan-789',
+            contribution_id: id,
+            problem: 'The current user authentication loop fails to handle overlapping token refresh requests, leading to "invalid session" errors when multiple API calls trigger simultaneously.',
+            root_cause: 'The `AuthService` lacks a synchronization primitive (lock) to ensure only one refresh operation occurs at a time. Secondary calls proceed with an expired token before the primary refresh completes.',
+            relevant_files: [
+              'src/services/auth.service.ts',
+              'src/services/api-client.ts'
+            ],
+            relevant_symbols: ['refreshSession', 'apiClient.interceptors'],
+            implementation_steps: [
+              'Introduce a `isRefreshing` boolean flag in `AuthService`.',
+              'Create a `refreshPromise` variable to store the in-flight refresh request.',
+              'Update `refreshSession` to return the existing `refreshPromise` if one is active.',
+              'Ensure the flag is reset in a `finally` block to prevent deadlocks.',
+              'Update the Axios interceptor to queue pending requests while refreshing.'
+            ],
+            testing_strategy: 'Simulate 5 concurrent API calls with an expired token and verify only 1 refresh network request is sent to the backend.',
+            risks: 'Potential memory leaks if queued requests are not properly released on refresh failure.',
+            expected_diff_size: 'Small (~50 lines)',
+            confidence: 0.98,
+            status: 'pending'
+          }
+        } as any;
+      }
+      return ContributionService.generatePlan(repositoryId!, id!);
+    },
     enabled: !!id && !!repositoryId,
   });
 
@@ -30,10 +63,48 @@ export default function SolutionPlanScreen() {
   const { lastEvent } = useAgentEvents(planResponse?.agent_run_id);
 
   const approveMutation = useMutation({
-    mutationFn: (approved: boolean) => ContributionService.approvePlan(repositoryId!, plan!.id, approved),
+    mutationFn: async (approved: boolean) => {
+      if (id === 'dummy-contrib-123') {
+        return {
+          id: 'dummy-plan-789',
+          status: approved ? 'approved' : 'rejected'
+        } as any;
+      }
+      return ContributionService.approvePlan(repositoryId!, plan!.id, approved);
+    },
     onSuccess: async (data) => {
       queryClient.setQueryData(['solution-plan', id], { ...planResponse, plan: data });
       if (data.status === 'approved') {
+        if (isMockMode && id === 'dummy-contrib-123') {
+          try {
+            // Find a real repository ID to use for the mock PR
+            // In a real scenario, this would be the ID of shubham230523/AIMastery
+            const targetRepoId = 'b8c1121a-2b37-4679-b582-5147f29694e5';
+            const targetOppId = '88afde2b-9822-4be3-95cf-a46f581b06b3';
+
+            // Create a REAL contribution record first so we have a valid ID for the mock
+            const realContribution = await ContributionService.start(targetRepoId, targetOppId);
+
+            // Trigger the "Real-World Mock" (Clone, Edit, Push, PR)
+            const mockResult = await ContributionService.executeMockImplementation(targetRepoId, realContribution.id);
+
+            Alert.alert(
+              'Success',
+              `Real-world mock completed!\nPR created: ${mockResult.pr_url}`,
+              [{ text: 'View PR', onPress: () => Linking.openURL(mockResult.pr_url) }]
+            );
+
+            router.replace({
+              pathname: '/contribution/[id]/review',
+              params: { id: realContribution.id, repositoryId: targetRepoId }
+            });
+          } catch (err) {
+            console.error('Failed to execute real-world mock:', err);
+            Alert.alert('Error', 'Real-world mock failed. Check backend logs.');
+          }
+          return;
+        }
+
         try {
           await ContributionService.setupWorkspace(repositoryId!, id!);
           const implResponse = await ContributionService.executeImplementation(repositoryId!, id!);
@@ -99,7 +170,7 @@ export default function SolutionPlanScreen() {
 
         <View className="gap-3">
             <Text weight="bold" className="text-lg px-1">Implementation Steps</Text>
-            {plan.implementation_steps.map((step, i) => (
+            {plan.implementation_steps?.map((step: string, i: number) => (
                 <Card key={i} className="bg-card">
                     <CardContent className="flex-row gap-3 py-3">
                         <View className="w-6 h-6 rounded-full bg-primary/20 items-center justify-center">
@@ -109,6 +180,9 @@ export default function SolutionPlanScreen() {
                     </CardContent>
                 </Card>
             ))}
+            {(!plan.implementation_steps || plan.implementation_steps.length === 0) && (
+                <Text variant="small" className="text-muted-foreground italic px-1">No specific steps provided.</Text>
+            )}
         </View>
 
         <Card>
@@ -119,10 +193,13 @@ export default function SolutionPlanScreen() {
                 <View>
                     <Text weight="bold" variant="small" className="uppercase tracking-wider text-muted-foreground mb-2">Files</Text>
                     <View className="flex-row flex-wrap gap-2">
-                        {plan.relevant_files.map(f => (
+                        {plan.relevant_files?.map((f: string) => (
                             <Badge key={f} label={f.split('/').pop() || f} variant="secondary" />
                         ))}
                     </View>
+                    {(!plan.relevant_files || plan.relevant_files.length === 0) && (
+                        <Text variant="small" className="text-muted-foreground italic">No specific files identified.</Text>
+                    )}
                 </View>
                 <Divider />
                 <View>

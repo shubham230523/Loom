@@ -13,26 +13,90 @@ import { ErrorState } from '@/components/ui/error-state';
 import { DiffViewer } from '@/components/diff-viewer';
 import { ContributionService } from '@/services/contribution.service';
 
+import { useSettingsStore } from '@/store/settings-store';
+
 export default function PullRequestReviewScreen() {
   const { id, repositoryId } = useLocalSearchParams<{ id: string, repositoryId: string }>();
+  const { isMockMode } = useSettingsStore();
 
   // 1. Fetch contribution details
   const { data: contribution, isLoading: isContrLoading, isError: isContrError, error: contrError, refetch: refetchContr } = useQuery({
     queryKey: ['contribution-review', id],
-    queryFn: () => ContributionService.getDetails(repositoryId!, id!),
+    queryFn: async () => {
+      if (id === 'dummy-contrib-123') {
+        return {
+          id,
+          repository_id: repositoryId,
+          branch_name: 'ai/dummy-refactor-auth-loop',
+          repository: {
+            full_name: 'shubham230523/Loom',
+            default_branch: 'master'
+          },
+          status: 'completed',
+          code_reviews: [{
+            decision: 'APPROVE',
+            summary: 'The implementation correctly introduces a mutex lock around the token refresh logic. Axios interceptors now properly queue outgoing requests during an active refresh cycle.',
+            confidence: 0.96
+          }],
+          test_runs: [{
+            status: 'success',
+            command: 'npm test src/services/auth.service.test.ts',
+            duration: 12.4
+          }],
+          diff_summary: {
+            additions: 42,
+            deletions: 12,
+            files: 2,
+            diff: `--- a/src/services/auth.service.ts
++++ b/src/services/auth.service.ts
+@@ -10,6 +10,8 @@
++  private isRefreshing = false;
++  private refreshPromise: Promise<string> | null = null;
++
+   async refreshSession(): Promise<string> {
+-    return await this.api.post('/auth/refresh');
++    if (this.isRefreshing) return this.refreshPromise!;
++    this.isRefreshing = true;
++    this.refreshPromise = this.api.post('/auth/refresh').finally(() => {
++      this.isRefreshing = false;
++    });
++    return this.refreshPromise;
+   }`
+          }
+        } as any;
+      }
+      return ContributionService.getDetails(repositoryId!, id!);
+    },
     enabled: !!id && !!repositoryId,
   });
 
   // 2. Fetch final validation result
   const { data: validation, isLoading: isValLoading } = useQuery({
     queryKey: ['contribution-validation', id],
-    queryFn: () => ContributionService.validate(repositoryId!, id!),
+    queryFn: async () => {
+      if (id === 'dummy-contrib-123') {
+        return {
+          is_valid: true,
+          score: 98,
+          summary: 'Contribution adheres to project standards and passes all sanity checks.',
+          issues: []
+        } as any;
+      }
+      return ContributionService.validate(repositoryId!, id!);
+    },
     enabled: !!id && !!repositoryId,
   });
 
   // 3. Push & PR Mutation
   const prMutation = useMutation({
     mutationFn: async () => {
+        if (id === 'dummy-contrib-123') {
+          // Simulate network delay
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          return {
+            url: 'https://github.com/shubham230523/Loom/pull/42'
+          } as any;
+        }
         await ContributionService.push(repositoryId!, id!);
         return await ContributionService.createPullRequest(repositoryId!, id!);
     },
@@ -80,16 +144,18 @@ export default function PullRequestReviewScreen() {
         </View>
 
         {/* Validation Score Header */}
-        <Card className={validation?.is_valid ? "bg-green-500/5 border-green-500/20" : "bg-yellow-500/5 border-yellow-500/20"}>
+        <Card className={(validation?.is_valid || isMockMode) ? "bg-green-500/5 border-green-500/20" : "bg-yellow-500/5 border-yellow-500/20"}>
             <CardContent className="flex-row items-center gap-6 py-6">
                 <View className="w-16 h-16 rounded-full bg-background border-4 border-primary items-center justify-center">
-                    <Text weight="bold" className="text-xl">{validation?.score || 0}</Text>
+                    <Text weight="bold" className="text-xl">{isMockMode ? 100 : (validation?.score || 0)}</Text>
                 </View>
                 <View className="flex-1">
                     <Text weight="bold" className="text-lg">Readiness Score</Text>
-                    <Text variant="small" className="text-muted-foreground">{validation?.summary}</Text>
+                    <Text variant="small" className="text-muted-foreground">
+                        {isMockMode ? "Mock Mode: Automatic 100% readiness for demonstration." : validation?.summary}
+                    </Text>
                 </View>
-                {validation?.is_valid && (
+                {(validation?.is_valid || isMockMode) && (
                     <SymbolView name="checkmark.seal.fill" size={32} tintColor="#22C55E" />
                 )}
             </CardContent>
@@ -124,15 +190,15 @@ export default function PullRequestReviewScreen() {
             <View className="flex-row gap-4">
                 <EvidenceCard
                     label="Test Status"
-                    value={latestTest?.status?.toUpperCase() || 'NONE'}
-                    icon={latestTest?.status === 'success' ? "checkmark.circle.fill" : "xmark.circle.fill"}
-                    color={latestTest?.status === 'success' ? "#22C55E" : "#EF4444"}
+                    value={isMockMode ? "SUCCESS" : (latestTest?.status?.toUpperCase() || 'NONE')}
+                    icon={(isMockMode || latestTest?.status === 'success') ? "checkmark.circle.fill" : "xmark.circle.fill"}
+                    color={(isMockMode || latestTest?.status === 'success') ? "#22C55E" : "#EF4444"}
                 />
                 <EvidenceCard
                     label="Code Review"
-                    value={latestReview?.decision || 'NONE'}
-                    icon={latestReview?.decision === 'APPROVE' ? "shield.fill" : "shield.slash.fill"}
-                    color={latestReview?.decision === 'APPROVE' ? "#22C55E" : "#EAB308"}
+                    value={isMockMode ? "APPROVE" : (latestReview?.decision || 'NONE')}
+                    icon={(isMockMode || latestReview?.decision === 'APPROVE') ? "shield.fill" : "shield.slash.fill"}
+                    color={(isMockMode || latestReview?.decision === 'APPROVE') ? "#22C55E" : "#EAB308"}
                 />
             </View>
         </View>
@@ -161,10 +227,10 @@ export default function PullRequestReviewScreen() {
         )}
 
         {/* Validation Issues List */}
-        {validation?.issues && validation.issues.length > 0 && (
+        {validation?.issues && validation.issues.length > 0 && !isMockMode && (
             <View className="gap-2">
                 <Text weight="bold" className="text-lg px-1 text-destructive">Remaining Concerns</Text>
-                {validation.issues.map((issue: any, i: number) => (
+                {validation.issues?.map((issue: any, i: number) => (
                     <Card key={i} className="bg-destructive/5 border-destructive/10">
                         <CardContent className="flex-row gap-3 py-3">
                             <SymbolView
@@ -188,17 +254,22 @@ export default function PullRequestReviewScreen() {
                 label="Create Pull Request"
                 size="lg"
                 onPress={handleCreatePR}
-                disabled={!validation?.is_valid}
-                className={!validation?.is_valid ? "opacity-50" : ""}
+                disabled={!isMockMode && !validation?.is_valid}
+                className={(!isMockMode && !validation?.is_valid) ? "opacity-50" : ""}
             />
             {prMutation.isError && (
                 <Text variant="small" className="text-destructive text-center mt-3">
                    Sync Failed: {(prMutation.error as any)?.message || 'Check your connection.'}
                 </Text>
             )}
-            {!validation?.is_valid && (
+            {!isMockMode && !validation?.is_valid && (
                 <Text variant="small" className="text-destructive text-center mt-3 font-medium">
                     Please resolve critical validation issues before submitting.
+                </Text>
+            )}
+            {isMockMode && (
+                <Text variant="small" className="text-primary text-center mt-3 font-medium">
+                    Mock Mode active: Validation constraints bypassed for demonstration.
                 </Text>
             )}
         </View>
