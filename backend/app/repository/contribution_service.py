@@ -784,6 +784,7 @@ export class MockAuthService {
 
             contribution.status = "pull_request_created"
             contribution.branch_name = branch_name
+            contribution.workspace_id = workspace.id
             await db.commit()
 
             return {
