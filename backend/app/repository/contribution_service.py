@@ -5,7 +5,7 @@ import uuid
 import asyncio
 import datetime
 from datetime import datetime as dt, timezone
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -530,6 +530,8 @@ class ContributionService:
             raise LoomError("Contribution has no associated workspace", status_code=400)
 
         # 3. Perform Push
+        push_url, pr_head = await self._prepare_github_push(client, repo, contribution)
+
         workspace = Workspace(workspace_id=contribution.workspace_id)
         if not workspace.path.exists():
              # We might need to re-implement/restore workspace here in production
@@ -539,14 +541,47 @@ class ContributionService:
             workspace=workspace,
             branch_name=contribution.branch_name,
             access_token=client.access_token,
-            repo_url=repo.html_url
+            repo_url=push_url
         )
 
         return {
             "status": "success",
             "branch": contribution.branch_name,
-            "repository": repo.full_name
+            "repository": repo.full_name,
+            "push_url": push_url,
+            "pr_head": pr_head
         }
+
+    async def _prepare_github_push(self, client: GitHubClient, repo: Repository, contribution: Contribution) -> Tuple[str, str]:
+        """
+        Determines the push URL and PR head for a contribution.
+        Handles forking if the user does not have write access to the upstream repo.
+        Returns (push_url, pr_head)
+        """
+        try:
+            gh_user = await github_service.get_user_profile(client.access_token)
+            gh_username = gh_user['login']
+        except Exception as e:
+            logger.error(f"Push Preparation: Failed to get user profile: {str(e)}")
+            gh_username = "unknown"
+
+        # If user is the owner, push directly to upstream
+        if gh_username.lower() == repo.owner.lower():
+            return repo.html_url, contribution.branch_name
+
+        # Otherwise, ensure a fork exists and push to it
+        logger.info(f"Push Preparation: Forking '{repo.full_name}' for user '{gh_username}'")
+        try:
+            fork_data = await github_service.fork_repository(client, repo.owner, repo.name)
+            push_url = fork_data['html_url']
+            pr_head = f"{gh_username}:{contribution.branch_name}"
+            logger.info(f"Push Preparation: Using fork at {push_url} with head {pr_head}")
+            # Wait a bit for GitHub to provision the fork if it's brand new
+            await asyncio.sleep(1)
+            return push_url, pr_head
+        except Exception as e:
+            logger.error(f"Push Preparation: Forking failed, falling back to upstream (might fail): {str(e)}")
+            return repo.html_url, contribution.branch_name
 
     async def create_github_pr(
         self,
@@ -581,7 +616,10 @@ class ContributionService:
         # 3. Construct PR Body
         pr_body = self._generate_pr_body(opportunity, plan, latest_test)
 
-        # 4. Create PR on GitHub
+        # 4. Determine PR head (handles cross-repo forks)
+        _, pr_head = await self._prepare_github_push(client, repo, contribution)
+
+        # 5. Create PR on GitHub
         try:
             pr_data = await github_service.create_pull_request(
                 client=client,
@@ -589,11 +627,11 @@ class ContributionService:
                 repo=repo.name,
                 title=f"Loom: {opportunity.title}",
                 body=pr_body,
-                head=contribution.branch_name,
+                head=pr_head,
                 base=repo.default_branch
             )
 
-            # 5. Update contribution record
+            # 6. Update contribution record
             contribution.status = "pull_request_created"
             await db.commit()
 
