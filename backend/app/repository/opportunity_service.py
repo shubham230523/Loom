@@ -70,6 +70,15 @@ class OpportunityService:
             existing_prs = await pr_service.get_repository_pull_requests(repository, client)
             logger.info(f"OpportunityService: Found {len(existing_prs)} active pull requests.")
 
+            # 3.5 Clear existing pending opportunities to avoid stale/mock data mix
+            await db.execute(
+                delete(Opportunity).where(
+                    Opportunity.repository_id == repository.id,
+                    Opportunity.status == "pending"
+                )
+            )
+            await db.commit()
+
             # 4. Generate Opportunities via Agent
             logger.info(f"OpportunityService: Calling OpportunityGeneratorAgent for {repository.full_name}...")
             try:
