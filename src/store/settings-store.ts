@@ -6,6 +6,6 @@ interface SettingsState {
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({
-  isMockMode: true, // Default to true as per user request
+  isMockMode: false,
   setMockMode: (isMockMode: boolean) => set({ isMockMode }),
 }));
