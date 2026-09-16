@@ -621,36 +621,37 @@ class ContributionService:
 
         # 5. Create PR on GitHub
         try:
-            pr_data = await github_service.create_pull_request(
-                client=client,
-                owner=repo.owner,
-                repo=repo.name,
-                title=f"Loom: {opportunity.title}",
-                body=pr_body,
-                head=pr_head,
-                base=repo.default_branch
-            )
-        except LoomError as le:
-            # Handle case where PR already exists
-            if le.status_code == 422:
-                # Attempt to find the existing PR
-                logger.info(f"PR creation failed with 422, checking if PR already exists for {pr_head}")
-                existing_prs = await github_service.list_pull_requests(client, repo.owner, repo.name, state="open")
-                for pr in existing_prs:
-                    current_head = f"{pr['head']['user']['login']}:{pr['head']['ref']}"
-                    if current_head == pr_head:
-                        logger.info(f"Found existing PR #{pr['number']}")
-                        pr_data = pr
-                        break
+            try:
+                pr_data = await github_service.create_pull_request(
+                    client=client,
+                    owner=repo.owner,
+                    repo=repo.name,
+                    title=f"Loom: {opportunity.title}",
+                    body=pr_body,
+                    head=pr_head,
+                    base=repo.default_branch
+                )
+            except LoomError as le:
+                # Handle case where PR already exists
+                if le.status_code == 422:
+                    # Attempt to find the existing PR
+                    logger.info(f"PR creation failed with 422, checking if PR already exists for {pr_head}")
+                    existing_prs = await github_service.list_pull_requests(client, repo.owner, repo.name, state="open")
+                    for pr in existing_prs:
+                        current_head = f"{pr['head']['user']['login']}:{pr['head']['ref']}"
+                        if current_head == pr_head:
+                            logger.info(f"Found existing PR #{pr['number']}")
+                            pr_data = pr
+                            break
+                    else:
+                        # If not found among open PRs, it might be a different validation error
+                        raise le
                 else:
-                    # If not found among open PRs, it might be a different validation error
                     raise le
-            else:
-                raise le
 
-        # 6. Update contribution record
-        contribution.status = "pull_request_created"
-        await db.commit()
+            # 6. Update contribution record
+            contribution.status = "pull_request_created"
+            await db.commit()
 
             return {
                 "id": pr_data["id"],
