@@ -222,7 +222,18 @@ class OpenRouterProvider(AIProvider):
                         elif "weighted_overall_score" in data: data["overall_score"] = data["weighted_overall_score"]
                         elif "score" in data: data["overall_score"] = data["score"]
 
-                # Last ditch effort: model_validate with the data we have, which might use aliases we added
+                # Robust type conversion for common mistakes
+                if isinstance(data, dict):
+                    for field_name, field_info in response_model.model_fields.items():
+                        if field_name in data:
+                            # If we expect a list but got something else
+                            if getattr(field_info.annotation, "__origin__", None) is list and not isinstance(data[field_name], list):
+                                data[field_name] = [data[field_name]]
+
+                            # Handle nested objects/lists of objects
+                            # (This is complex for a generic loop, but let's handle the top level for now)
+
+                # Last ditch effort: model_validate with the data we have
                 return response_model.model_validate(data)
             except Exception as final_error:
                 logger.error(f"OpenRouter: Failed to parse structured response: {str(final_error)}. Raw Content: {content}")

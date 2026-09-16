@@ -409,8 +409,10 @@ class ContributionService:
             contribution.status = "failed"
             await db.commit()
             await agent_run_service.complete_run(db, agent_run.id, success=False)
-            return final_impl_result.model_dump() if final_impl_result else {"success": False}
+            logger.error(f"Contribution {contribution_id} failed after maximum review cycles.")
+            return final_impl_result.model_dump() if final_impl_result else {"success": False, "summary": "Failed after maximum cycles."}
         except Exception as e:
+            logger.error(f"Unexpected error in execute_implementation for {contribution_id}: {str(e)}", exc_info=True)
             await agent_run_service.emit_event(db, agent_run.id, "failed", f"Unexpected error: {str(e)}")
             await agent_run_service.complete_run(db, agent_run.id, success=False)
             raise e

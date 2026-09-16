@@ -1,4 +1,5 @@
-from pydantic import BaseModel, Field
+import re
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Dict, Any, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -15,6 +16,26 @@ class OpportunityProposal(BaseModel):
     confidence: float = Field(description="Score from 0.0 to 1.0 based on evidence strength")
     evidence_source: str = Field(description="The specific issue, TODO, or gap that triggered this")
     affected_files: List[str] = Field(description="List of files likely needing modification")
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def validate_confidence(cls, v: Any) -> float:
+        """Coerces AI output like 'high' or '0.8' into a float."""
+        if isinstance(v, str):
+            v_lower = v.lower()
+            if "high" in v_lower: return 0.9
+            if "medium" in v_lower: return 0.6
+            if "low" in v_lower: return 0.3
+            try:
+                # Try to extract numbers from strings like "0.85" or "85%"
+                match = re.search(r"(\d+\.?\d*)", v)
+                if match:
+                    val = float(match.group(1))
+                    return val / 100.0 if val > 1.0 else val
+                return float(v)
+            except (ValueError, TypeError):
+                return 0.5
+        return float(v) if v is not None else 0.5
 
 from pydantic import AliasChoices
 
@@ -96,7 +117,8 @@ class OpportunityGeneratorAgent:
         4. Prioritize "low-hanging fruit" and "high-impact technical debt".
         5. Be technically specific in the description.
         6. YOU MUST RETURN A LIST OF OBJECTS. Each object in the "opportunities" list must have all fields: "title", "description", "type", "impact", "difficulty", "confidence", "evidence_source", and "affected_files".
-        7. If NO actionable signals OR obvious project improvements are found, return an empty list for the "opportunities" field. Do NOT return other fields instead.
+        7. IMPORTANT: The "confidence" field MUST be a number between 0.0 and 1.0 (e.g., 0.85). DO NOT use strings like "high" or "medium".
+        8. If NO actionable signals OR obvious project improvements are found, return an empty list for the "opportunities" field. Do NOT return other fields instead.
         """
 
         logger.info(f"OpportunityGeneratorAgent: Final prompt context summary: Issues={len(issues)}, Signals={len(code_signals)}, Gaps={len(test_gaps)}")

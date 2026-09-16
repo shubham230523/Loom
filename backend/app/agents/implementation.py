@@ -101,14 +101,18 @@ class ImplementationAgent:
                     task=TaskType.IMPLEMENTATION
                 )
 
+                if not change.new_content:
+                    logger.warning(f"AI returned empty content for {rel_path}, skipping.")
+                    continue
+
                 with open(file_full_path, "w", encoding="utf-8") as f:
                     f.write(change.new_content)
 
                 modified_files.append(rel_path)
-                logger.info(f"Modified file: {rel_path}. Reasoning: {change.reasoning}")
+                logger.info(f"Successfully modified file: {rel_path}. Reasoning: {change.reasoning}")
 
             except Exception as e:
-                logger.error(f"AI failed to generate changes for {rel_path}: {str(e)}")
+                logger.error(f"AI failed to generate changes for {rel_path}: {str(e)}", exc_info=True)
                 continue
 
         # 5. Run Verification (Tests via TestAgent)
