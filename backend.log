@@ -1,0 +1,14 @@
+[2026-09-11 11:00:49] INFO    | system | main:lifespan - Application starting. Event loop type: ProactorEventLoop
+[2026-09-11 11:00:49] INFO    | system | redis:connect - Connected to Redis successfully.
+[2026-09-11 11:01:13] INFO    | system | middleware:dispatch - Incoming request: GET /health
+[2026-09-11 11:01:13] INFO    | system | middleware:dispatch - Completed request: GET /health with status 200 | EXTRA: {'duration': 0.0065, 'status': 200}
+INFO:     127.0.0.1:33975 - "GET /health HTTP/1.1" 200 OK
+[2026-09-11 11:05:09] INFO    | system | middleware:dispatch - Incoming request: GET /health
+[2026-09-11 11:05:10] INFO    | system | middleware:dispatch - Completed request: GET /health with status 200 | EXTRA: {'duration': 0.1011, 'status': 200}
+INFO:     127.0.0.1:32898 - "GET /health HTTP/1.1" 200 OK
+[2026-09-11 11:20:51] INFO    | system | middleware:dispatch - Incoming request: GET /health
+[2026-09-11 11:20:51] INFO    | system | middleware:dispatch - Completed request: GET /health with status 200 | EXTRA: {'duration': 0.0873, 'status': 200}
+INFO:     127.0.0.1:16825 - "GET /health HTTP/1.1" 200 OK
+[2026-09-11 11:24:39] INFO    | system | middleware:dispatch - Incoming request: GET /health
+[2026-09-11 11:24:39] INFO    | system | middleware:dispatch - Completed request: GET /health with status 200 | EXTRA: {'duration': 0.0604, 'status': 200}
+INFO:     127.0.0.1:58622 - "GET /health HTTP/1.1" 200 OK

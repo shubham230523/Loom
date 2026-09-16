@@ -1,4 +1,6 @@
 import time
+import hashlib
+import json
 from typing import AsyncIterator, List, Optional, Type, TypeVar, Dict, Any
 from pydantic import BaseModel
 from backend.app.ai.base import AIProvider
@@ -13,6 +15,8 @@ from backend.app.ai.schemas import (
     ChatMessage
 )
 from backend.app.database import SessionLocal, ModelRun
+from backend.app.services.redis import redis_service
+from backend.app.config import settings
 from backend.app.utils.logging import logger
 from backend.app.api.errors import LoomError
 
@@ -22,9 +26,26 @@ class AIGateway:
     """
     Central gateway for all AI operations in Loom.
     Handles provider selection, response normalization, and error aggregation.
+    Includes Redis-based caching to minimize costs and latency.
     """
     def __init__(self, provider: Optional[AIProvider] = None):
         self._provider = provider or get_ai_provider()
+
+    def _generate_cache_key(self, request: ChatRequest, operation: str) -> str:
+        """Generates a stable hash for a chat request."""
+        # Normalize request for hashing
+        payload = {
+            "model": request.model or settings.DEFAULT_MODEL,
+            "messages": [m.model_dump() for m in request.messages],
+            "temperature": request.temperature,
+            "max_tokens": request.max_tokens,
+            "response_format": request.response_format,
+            "operation": operation
+        }
+        dump = json.dumps(payload, sort_keys=True)
+        request_hash = hashlib.sha256(dump.encode()).hexdigest()
+        provider_name = type(self._provider).__name__
+        return f"ai_cache:{provider_name}:{request_hash}"
 
     async def chat(self, request: ChatRequest, task: Optional[TaskType] = None) -> ChatResponse:
         """
@@ -34,11 +55,25 @@ class AIGateway:
         if task:
             request.model = model_router.get_model_for_task(task)
 
+        cache_key = self._generate_cache_key(request, "chat")
+        if settings.ENABLE_AI_CACHE:
+            cached = await redis_service.get(cache_key)
+            if cached:
+                logger.info(f"AI Gateway: Cache hit for model {request.model}")
+                return ChatResponse.model_validate_json(cached)
+
         logger.info(f"AI Gateway: Processing chat request with model {request.model}")
         start_time = time.time()
         try:
             response = await self._provider.chat(request)
             duration = time.time() - start_time
+
+            if settings.ENABLE_AI_CACHE:
+                await redis_service.set(
+                    cache_key,
+                    response.model_dump_json(),
+                    expire=settings.AI_CACHE_TTL
+                )
 
             await self._record_run(
                 model=request.model or "unknown",
@@ -97,11 +132,25 @@ class AIGateway:
         if task:
             request.model = model_router.get_model_for_task(task)
 
+        cache_key = self._generate_cache_key(request, f"structured:{response_model.__name__}")
+        if settings.ENABLE_AI_CACHE:
+            cached = await redis_service.get(cache_key)
+            if cached:
+                logger.info(f"AI Gateway: Cache hit for structured request {response_model.__name__}")
+                return response_model.model_validate_json(cached)
+
         logger.info(f"AI Gateway: Processing structured request for {response_model.__name__} using model {request.model}")
         start_time = time.time()
         try:
             result = await self._provider.chat_structured(request, response_model)
             duration = time.time() - start_time
+
+            if settings.ENABLE_AI_CACHE:
+                await redis_service.set(
+                    cache_key,
+                    result.model_dump_json(),
+                    expire=settings.AI_CACHE_TTL
+                )
 
             await self._record_run(
                 model=request.model or "unknown",

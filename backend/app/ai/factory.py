@@ -2,6 +2,7 @@ from backend.app.ai.base import AIProvider
 from backend.app.ai.providers.ollama import OllamaCloudProvider
 from backend.app.ai.providers.openrouter import OpenRouterProvider
 from backend.app.ai.providers.gemini import GeminiProvider
+from backend.app.ai.providers.mock import MockAIProvider
 from backend.app.config import settings
 from backend.app.api.errors import LoomError
 
@@ -9,7 +10,9 @@ def get_ai_provider() -> AIProvider:
     """
     Factory function to get the configured AI provider.
     """
-    if settings.AI_PROVIDER in ["ollama-cloud", "loom-cloud"]:
+    if settings.AI_PROVIDER == "mock":
+        return MockAIProvider()
+    elif settings.AI_PROVIDER in ["ollama-cloud", "loom-cloud"]:
         return OllamaCloudProvider()
     elif settings.AI_PROVIDER == "openrouter":
         return OpenRouterProvider()

@@ -60,6 +60,8 @@ class Settings(BaseSettings):
 
     # AI Provider Configuration
     AI_PROVIDER: str = "openrouter"  # openai, anthropic, loom-cloud, ollama-cloud, openrouter, gemini
+    ENABLE_AI_CACHE: bool = True
+    AI_CACHE_TTL: int = 60 * 60 * 24  # 24 hours
     OPENAI_API_KEY: Optional[str] = None
     ANTHROPIC_API_KEY: Optional[str] = None
     LOOM_CLOUD_API_KEY: Optional[str] = None

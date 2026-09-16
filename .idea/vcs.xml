@@ -2,6 +2,11 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/loom-workspaces/15dfaa11-ff28-46aa-92d5-e768ca72a6f5" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/loom-workspaces/9a451799-f816-4bad-9849-2efa1d9216a5" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/loom-workspaces/a9732497-9305-4302-a850-c34b7b462126" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/loom-workspaces/b153aea4-be44-4435-a34e-9e154c68bb30" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/loom-workspaces/e0180a3a-93d5-4f9c-a4a9-02ec8d704399" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/loom-workspaces/f7b67672-8292-4d75-930a-2837bb0334ef" vcs="Git" />
   </component>
 </project>

@@ -67,8 +67,8 @@ def setup_logging(service_name: str = "loom-api"):
     root_logger.addHandler(handler)
 
     # Set levels for some verbose libraries
-    logging.getLogger("uvicorn.access").handlers = []
-    logging.getLogger("uvicorn.error").handlers = []
+    # logging.getLogger("uvicorn.access").handlers = []
+    # logging.getLogger("uvicorn.error").handlers = []
 
     # Mute standard library logs that are too noisy
     logging.getLogger("httpx").setLevel(logging.WARNING)
