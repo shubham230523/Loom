@@ -42,9 +42,22 @@ class MockAIProvider(AIProvider):
             yield ChatStreamChunk(content=word + " ")
         yield ChatStreamChunk(content="", finish_reason="stop")
 
-    async def chat_structured(self, request: ChatRequest, response_model: Type[T]) -> T:
+    async def chat_structured(
+        self,
+        request: ChatRequest,
+        response_model: Type[T],
+        on_token: Optional[Any] = None
+    ) -> T:
         logger.info(f"MockAIProvider: Simulating structured response for {response_model.__name__}")
-        await asyncio.sleep(1.0)
+
+        if on_token:
+            # Simulate streaming tokens for mock mode
+            mock_tokens = ["Analyzing", " codebase", "...", " Identifying", " patterns", "...", " Generating", " solution", "."]
+            for token in mock_tokens:
+                await asyncio.sleep(0.1)
+                await on_token(token)
+
+        await asyncio.sleep(0.5)
 
         # Basic mock data generator based on common models in Loom
         model_name = response_model.__name__

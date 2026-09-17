@@ -18,7 +18,7 @@ export default function AgentActivityScreen() {
   const router = useRouter();
 
   // 1. WebSocket Hook
-  const { events: realEvents, lastEvent: realLastEvent } = useAgentEvents(agentRunId);
+  const { events: realEvents, lastEvent: realLastEvent, thinkingText } = useAgentEvents(agentRunId);
 
   // Dummy events for testing
   const dummyEvents: any[] = [
@@ -84,6 +84,22 @@ export default function AgentActivityScreen() {
                 <AgentTimeline events={events} />
             </CardContent>
         </Card>
+
+        {/* Live Reasoning (Streaming tokens) */}
+        {thinkingText ? (
+            <Card className="border-primary/30 bg-primary/5">
+                <CardHeader className="py-3 flex-row items-center gap-2">
+                    <SymbolView name="brain.head.profile" size={16} tintColor={theme.primary} />
+                    <CardTitle><Text variant="small" weight="bold" className="text-primary">Live Reasoning</Text></CardTitle>
+                </CardHeader>
+                <CardContent className="py-2">
+                    <Text variant="small" className="font-mono text-xs leading-5">
+                        {thinkingText}
+                        <Text className="text-primary font-bold"> |</Text>
+                    </Text>
+                </CardContent>
+            </Card>
+        ) : null}
 
         {/* Live Logs / Events List */}
         <View className="flex-1">

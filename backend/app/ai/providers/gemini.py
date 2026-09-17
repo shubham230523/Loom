@@ -166,7 +166,12 @@ class GeminiProvider(AIProvider):
                 logger.error(f"Gemini Streaming Error: {str(e)}")
                 raise LoomError(f"AI Streaming failure: {str(e)}", status_code=500)
 
-    async def chat_structured(self, request: ChatRequest, response_model: Type[T]) -> T:
+    async def chat_structured(
+        self,
+        request: ChatRequest,
+        response_model: Type[T],
+        on_token: Optional[Any] = None
+    ) -> T:
         # Gemini supports response_mime_type="application/json"
         request.response_format = {"type": "json_object"}
 
@@ -174,8 +179,15 @@ class GeminiProvider(AIProvider):
         json_instruction = f"Return response as a valid JSON object matching the following schema: {response_model.model_json_schema()}"
         request.messages.append(ChatMessage(role=MessageRole.SYSTEM, content=json_instruction))
 
-        response = await self.chat(request)
-        content = response.message.content
+        content = ""
+        if on_token:
+            async for chunk in self.chat_stream(request):
+                if chunk.content:
+                    content += chunk.content
+                    await on_token(chunk.content)
+        else:
+            response = await self.chat(request)
+            content = response.message.content
 
         try:
             return response_model.model_validate_json(content)

@@ -41,21 +41,23 @@ class AgentRunService:
         message: str,
         metadata: Optional[Dict[str, Any]] = None
     ):
-        try:
-            event = AgentEvent(
-                agent_run_id=agent_run_id,
-                event_type=event_type,
-                message=message,
-                event_metadata=metadata
-            )
-            db.add(event)
-            await db.commit()
-        except Exception as e:
-            logger.error(f"Failed to persist agent event: {str(e)}")
-            # Don't let logging failure crash the process
-            await db.rollback()
+        # 1. Persist to DB (Skip thinking_chunk to avoid high-write volume overhead)
+        if event_type != "thinking_chunk":
+            try:
+                event = AgentEvent(
+                    agent_run_id=agent_run_id,
+                    event_type=event_type,
+                    message=message,
+                    event_metadata=metadata
+                )
+                db.add(event)
+                await db.commit()
+            except Exception as e:
+                logger.error(f"Failed to persist agent event: {str(e)}")
+                # Don't let logging failure crash the process
+                await db.rollback()
 
-        # Broadcast via WebSocket (even if DB persistence failed)
+        # 2. Broadcast via WebSocket (Always, including thinking_chunks)
         try:
             payload = {
                 "agent_run_id": str(agent_run_id),

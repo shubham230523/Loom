@@ -27,6 +27,7 @@ class ImplementationAgent:
         plan: SolutionPlan,
         contribution: Contribution,
         workspace_path: Path,
+        agent_run_id: Optional[UUID] = None,
         test_command: Optional[str] = None,
         debugging_context: Optional[str] = None,
         review_feedback: Optional[str] = None
@@ -94,11 +95,22 @@ class ImplementationAgent:
                 ]
             )
 
+            async def on_token(token: str):
+                if agent_run_id:
+                    await agent_run_service.emit_event(
+                        db=db,
+                        agent_run_id=agent_run_id,
+                        event_type="thinking_chunk",
+                        message=token,
+                        metadata={"path": rel_path}
+                    )
+
             try:
                 change = await ai_gateway.chat_structured(
                     request=request,
                     response_model=FileChange,
-                    task=TaskType.IMPLEMENTATION
+                    task=TaskType.IMPLEMENTATION,
+                    on_token=on_token
                 )
 
                 if not change.new_content:

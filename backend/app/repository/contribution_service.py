@@ -122,6 +122,7 @@ class ContributionService:
                 repository=repo,
                 index=index,
                 opportunity=opportunity,
+                agent_run_id=agent_run.id,
                 issue=issue
             )
             await agent_run_service.emit_event(db, agent_run.id, "step_completed", "Solution blueprint generated.")
@@ -351,6 +352,7 @@ class ContributionService:
                             plan=plan,
                             contribution=contribution,
                             workspace_path=workspace.path,
+                            agent_run_id=agent_run_id,
                             test_command=test_command,
                             debugging_context=debugging_context,
                             review_feedback=review_feedback

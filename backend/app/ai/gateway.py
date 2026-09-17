@@ -125,15 +125,22 @@ class AIGateway:
             )
             self._handle_error(e, "chat_stream")
 
-    async def chat_structured(self, request: ChatRequest, response_model: Type[T], task: Optional[TaskType] = None) -> T:
+    async def chat_structured(
+        self,
+        request: ChatRequest,
+        response_model: Type[T],
+        task: Optional[TaskType] = None,
+        on_token: Optional[Any] = None
+    ) -> T:
         """
         Executes a structured output request, returning a validated Pydantic model.
         """
         if task:
             request.model = model_router.get_model_for_task(task)
 
+        # Cache is disabled when streaming tokens to ensure real-time feedback
         cache_key = self._generate_cache_key(request, f"structured:{response_model.__name__}")
-        if settings.ENABLE_AI_CACHE:
+        if settings.ENABLE_AI_CACHE and not on_token:
             cached = await redis_service.get(cache_key)
             if cached:
                 logger.info(f"AI Gateway: Cache hit for structured request {response_model.__name__}")
@@ -142,10 +149,10 @@ class AIGateway:
         logger.info(f"AI Gateway: Processing structured request for {response_model.__name__} using model {request.model}")
         start_time = time.time()
         try:
-            result = await self._provider.chat_structured(request, response_model)
+            result = await self._provider.chat_structured(request, response_model, on_token=on_token)
             duration = time.time() - start_time
 
-            if settings.ENABLE_AI_CACHE:
+            if settings.ENABLE_AI_CACHE and not on_token:
                 await redis_service.set(
                     cache_key,
                     result.model_dump_json(),

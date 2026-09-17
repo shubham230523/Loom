@@ -114,6 +114,7 @@ class SolutionPlannerAgent:
         repository: Repository,
         index: RepositoryIndex,
         opportunity: Opportunity,
+        agent_run_id: Optional[UUID] = None,
         issue: Optional[Issue] = None
     ) -> SolutionPlanOutput:
         """
@@ -190,10 +191,21 @@ class SolutionPlannerAgent:
             ]
         )
 
+        from backend.app.services.agent_run_service import agent_run_service
+        async def on_token(token: str):
+            if agent_run_id:
+                await agent_run_service.emit_event(
+                    db=db,
+                    agent_run_id=agent_run_id,
+                    event_type="thinking_chunk",
+                    message=token
+                )
+
         return await ai_gateway.chat_structured(
             request=request,
             response_model=SolutionPlanOutput,
-            task=TaskType.PLANNING
+            task=TaskType.PLANNING,
+            on_token=on_token
         )
 
 solution_planner_agent = SolutionPlannerAgent()

@@ -139,7 +139,12 @@ class OpenRouterProvider(AIProvider):
                 logger.error(f"OpenRouter Streaming Error: {str(e)}")
                 raise LoomError(f"AI Streaming failure: {str(e)}", status_code=500)
 
-    async def chat_structured(self, request: ChatRequest, response_model: Type[T]) -> T:
+    async def chat_structured(
+        self,
+        request: ChatRequest,
+        response_model: Type[T],
+        on_token: Optional[Any] = None
+    ) -> T:
         # OpenRouter supports JSON mode for many models
         request.response_format = {"type": "json_object"}
 
@@ -148,8 +153,17 @@ class OpenRouterProvider(AIProvider):
         if not any(json_instruction in m.content for m in request.messages):
              request.messages.append(ChatMessage(role=MessageRole.SYSTEM, content=json_instruction))
 
-        response = await self.chat(request)
-        content = response.message.content
+        content = ""
+        if on_token:
+            # Stream the structured response if a callback is provided
+            async for chunk in self.chat_stream(request):
+                if chunk.content:
+                    content += chunk.content
+                    await on_token(chunk.content)
+        else:
+            # Fallback to standard non-streaming chat
+            response = await self.chat(request)
+            content = response.message.content
 
         if not content:
             logger.error("OpenRouter: Received empty content in structured request")

@@ -27,9 +27,15 @@ class AIProvider(ABC):
         pass
 
     @abstractmethod
-    async def chat_structured(self, request: ChatRequest, response_model: Type[T]) -> T:
+    async def chat_structured(
+        self,
+        request: ChatRequest,
+        response_model: Type[T],
+        on_token: Optional[Any] = None
+    ) -> T:
         """
         Sends a chat request and returns a validated Pydantic model.
+        Supports an optional on_token callback for streaming intermediate tokens.
         """
         pass
 

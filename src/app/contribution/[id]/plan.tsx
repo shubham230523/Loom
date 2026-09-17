@@ -61,7 +61,7 @@ export default function SolutionPlanScreen() {
   });
 
   const plan = planResponse?.plan;
-  const { lastEvent } = useAgentEvents(planResponse?.agent_run_id);
+  const { lastEvent, thinkingText } = useAgentEvents(planResponse?.agent_run_id);
 
   const approveMutation = useMutation({
     mutationFn: async (approved: boolean) => {
@@ -124,7 +124,19 @@ export default function SolutionPlanScreen() {
   });
 
   if (isLoading) {
-    return <LoadingState message={lastEvent?.message || "Principal Engineer is designing the solution..."} />;
+    return (
+      <View className="flex-1">
+        <LoadingState message={lastEvent?.message || "Principal Engineer is designing the solution..."} />
+        {thinkingText ? (
+            <View className="px-10 pb-20 items-center">
+                <Text variant="small" className="text-center font-mono text-muted-foreground leading-5 opacity-70">
+                    {thinkingText.length > 300 ? '...' + thinkingText.slice(-300) : thinkingText}
+                    <Text className="text-primary font-bold"> |</Text>
+                </Text>
+            </View>
+        ) : null}
+      </View>
+    );
   }
 
   if (isError) {
