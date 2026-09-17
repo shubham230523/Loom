@@ -87,7 +87,7 @@ export default function AgentActivityScreen() {
             <CardHeader>
                 <CardTitle><Text variant="subtitle">Live Timeline</Text></CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="pb-4">
                 <AgentTimeline events={events} />
             </CardContent>
         </Card>
