@@ -498,6 +498,7 @@ class ContributionService:
             select(TestRun)
             .where(TestRun.contribution_id == contribution_id)
             .order_by(TestRun.timestamp.desc())
+            .limit(1)
         )
         res = await db.execute(query)
         test_run = res.scalar_one_or_none()
