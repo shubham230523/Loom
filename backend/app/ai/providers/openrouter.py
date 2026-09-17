@@ -176,7 +176,13 @@ class OpenRouterProvider(AIProvider):
                         if isinstance(val, list):
                             return response_model.model_validate(val)
 
-                # If the AI wrapped the response in a key matching the model name or similar
+                # 2. Robust unwrapping
+                if isinstance(data, dict) and len(data) == 1:
+                    # If it's a single key pointing to another dict, try the inner dict
+                    inner_val = next(iter(data.values()))
+                    if isinstance(inner_val, dict):
+                        data = inner_val
+
                 if isinstance(data, dict):
                     # Check if all required fields are inside a sub-dictionary
                     for key, val in data.items():
@@ -186,20 +192,28 @@ class OpenRouterProvider(AIProvider):
                             except Exception:
                                 continue
 
-                # Attempt to map missing required fields from existing ones
+                # 3. Attempt to map missing required fields from existing ones
                 if isinstance(data, dict):
                     # Generic mapping for common patterns
                     for model_field in response_model.model_fields:
                         if model_field not in data:
-                            # Try camelCase version
-                            camel_field = "".join(word.capitalize() if i > 0 else word for i, word in enumerate(model_field.split("_")))
-                            if camel_field in data:
-                                data[model_field] = data[camel_field]
+                            # Try case-insensitive matching
+                            for k, v in data.items():
+                                if k.lower() == model_field.replace("_", "").lower():
+                                    data[model_field] = v
+                                    break
 
-                            # Try PascalCase version
-                            pascal_field = "".join(word.capitalize() for word in model_field.split("_"))
-                            if pascal_field in data:
-                                data[model_field] = data[pascal_field]
+                            if model_field not in data:
+                                # Try camelCase version
+                                camel_field = "".join(word.capitalize() if i > 0 else word for i, word in enumerate(model_field.split("_")))
+                                if camel_field in data:
+                                    data[model_field] = data[camel_field]
+
+                            if model_field not in data:
+                                # Try PascalCase version
+                                pascal_field = "".join(word.capitalize() for word in model_field.split("_"))
+                                if pascal_field in data:
+                                    data[model_field] = data[pascal_field]
 
                     # Specific mapping for SolutionPlanOutput
                     if "problem" not in data:
@@ -227,7 +241,8 @@ class OpenRouterProvider(AIProvider):
                     for field_name, field_info in response_model.model_fields.items():
                         if field_name in data:
                             # If we expect a list but got something else
-                            if getattr(field_info.annotation, "__origin__", None) is list and not isinstance(data[field_name], list):
+                            is_list_type = field_info.annotation is list or getattr(field_info.annotation, "__origin__", None) is list
+                            if is_list_type and not isinstance(data[field_name], list):
                                 data[field_name] = [data[field_name]]
 
                             # Handle nested objects/lists of objects

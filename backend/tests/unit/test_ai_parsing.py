@@ -72,3 +72,29 @@ def test_opportunity_list_alias_validation():
     result2 = OpportunityList.model_validate(valid_data)
     assert len(result2.opportunities) == 1
     assert result2.opportunities[0].title == "Fix something"
+
+def test_opportunity_confidence_coercion():
+    """Verify that OpportunityProposal can handle string-based confidence values."""
+    from backend.app.agents.opportunity_generator import OpportunityProposal
+
+    base_data = {
+        "title": "T", "description": "D", "type": "bug",
+        "impact": "H", "difficulty": "E", "evidence_source": "S",
+        "affected_files": []
+    }
+
+    # Test 'high'
+    opp_high = OpportunityProposal.model_validate({**base_data, "confidence": "high"})
+    assert opp_high.confidence == 0.9
+
+    # Test 'medium'
+    opp_med = OpportunityProposal.model_validate({**base_data, "confidence": "medium"})
+    assert opp_med.confidence == 0.6
+
+    # Test percentage string
+    opp_pct = OpportunityProposal.model_validate({**base_data, "confidence": "85%"})
+    assert opp_pct.confidence == 0.85
+
+    # Test fallback
+    opp_fail = OpportunityProposal.model_validate({**base_data, "confidence": "uncertain"})
+    assert opp_fail.confidence == 0.5
