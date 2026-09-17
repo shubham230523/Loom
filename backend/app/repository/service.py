@@ -600,7 +600,9 @@ class RepositoryService:
         # 3. Java/Kotlin Ecosystem
         if "gradle" in build_info["systems"]:
             test_info["frameworks"].append("junit") # Assume JUnit for JVM
-            cmd = "./gradlew test" if build_info["has_wrapper"] else "gradle test"
+            # Strictly check for the file in the workspace
+            has_gradlew = (path / "gradlew").exists()
+            cmd = "./gradlew test" if has_gradlew else "gradle test"
             test_info["test_commands"].append(cmd)
         elif "maven" in build_info["systems"]:
             test_info["frameworks"].append("junit")

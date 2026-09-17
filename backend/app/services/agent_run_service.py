@@ -21,6 +21,7 @@ class AgentRunService:
             started_at=datetime.now(timezone.utc)
         )
         db.add(run)
+        await db.flush()
         await db.commit()
         await db.refresh(run)
 
@@ -44,18 +45,15 @@ class AgentRunService:
         # 1. Persist to DB (Skip thinking_chunk to avoid high-write volume overhead)
         if event_type != "thinking_chunk":
             try:
-                event = AgentEvent(
-                    agent_run_id=agent_run_id,
-                    event_type=event_type,
-                    message=message,
-                    event_metadata=metadata
-                )
-                db.add(event)
-                await db.commit()
+                # Check if session is healthy. If not, use a fresh one for logging.
+                try:
+                    await self._persist_event(db, agent_run_id, event_type, message, metadata)
+                except Exception:
+                    # Session might be poisoned or closed, try a fresh one
+                    async with SessionLocal() as fresh_db:
+                        await self._persist_event(fresh_db, agent_run_id, event_type, message, metadata)
             except Exception as e:
                 logger.error(f"Failed to persist agent event: {str(e)}")
-                # Don't let logging failure crash the process
-                await db.rollback()
 
         # 2. Broadcast via WebSocket (Always, including thinking_chunks)
         try:
@@ -72,15 +70,27 @@ class AgentRunService:
 
         logger.info(f"Agent Event Emitted: {event_type} - {message}")
 
+    async def _persist_event(self, db: AsyncSession, agent_run_id: UUID, event_type: str, message: str, metadata: Optional[Dict[str, Any]]):
+        event = AgentEvent(
+            agent_run_id=agent_run_id,
+            event_type=event_type,
+            message=message,
+            event_metadata=metadata
+        )
+        db.add(event)
+        await db.flush()
+        await db.commit()
+
     async def complete_run(self, db: AsyncSession, agent_run_id: UUID, success: bool = True):
         try:
             query = select(AgentRun).where(AgentRun.id == agent_run_id)
             result = await db.execute(query)
-            run = result.scalars().first()
+            run = result.scalar_one_or_none()
 
             if run:
                 run.status = "completed" if success else "failed"
                 run.completed_at = datetime.now(timezone.utc)
+                await db.flush()
                 await db.commit()
         except Exception as e:
             logger.error(f"Failed to complete agent run {agent_run_id}: {str(e)}")

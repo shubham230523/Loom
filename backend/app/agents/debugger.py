@@ -1,13 +1,23 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, AliasChoices
 from typing import List, Dict, Any, Optional
 from backend.app.ai import ai_gateway, ChatRequest, ChatMessage, MessageRole, TaskType
 from backend.app.database import TestRun
 from backend.app.utils.logging import logger
 
 class DebuggingAnalysis(BaseModel):
-    root_cause_analysis: str = Field(description="Identification of why the tests failed")
-    suggested_fix: str = Field(description="Clear instructions on how to fix the code to make tests pass")
-    affected_files: List[str] = Field(description="Files that need further modification")
+    root_cause_analysis: str = Field(
+        description="Identification of why the tests failed",
+        validation_alias=AliasChoices("root_cause_analysis", "root_cause", "issue", "problem", "explanation")
+    )
+    suggested_fix: str = Field(
+        description="Clear instructions on how to fix the code to make tests pass",
+        validation_alias=AliasChoices("suggested_fix", "fix", "solution", "resolution", "suggested_resolution")
+    )
+    affected_files: List[str] = Field(
+        default_factory=list,
+        description="Files that need further modification",
+        validation_alias=AliasChoices("affected_files", "files", "files_to_fix", "path")
+    )
 
 class DebuggerAgent:
     async def analyze_failure(

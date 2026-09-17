@@ -117,7 +117,7 @@ class Settings(BaseSettings):
     PULL_REQUEST_TEMPLATE_VARIANTS: List[str] = ["PULL_REQUEST_TEMPLATE.md", "pull_request_template.md"]
 
     # Sandbox Settings
-    SANDBOX_IMAGE: str = "python:3.11-slim"
+    SANDBOX_IMAGE: str = "gradle:8-jdk17"
     SANDBOX_CPU_LIMIT: float = 1.0 # 1.0 CPU
     SANDBOX_MEMORY_LIMIT: str = "512m"
     SANDBOX_TIMEOUT: int = 600 # 10 minutes

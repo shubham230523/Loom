@@ -67,8 +67,7 @@ class SandboxManager:
             "cap_drop": ["ALL"], # Drop all capabilities
             "security_opt": ["no-new-privileges"],
             "working_dir": "/workspace",
-            "detach": True,
-            "remove": False
+            "detach": True
         }
 
         # Disk limit requires specialized storage driver (overlay2 with xfs prpquota etc)
@@ -126,11 +125,18 @@ class SandboxManager:
 
     def _create_tar_stream(self, path: Path) -> io.BytesIO:
         stream = io.BytesIO()
+
+        def tar_filter(tarinfo):
+            # Fix permissions for scripts (especially from Windows hosts)
+            if tarinfo.name.endswith(("gradlew", "mvnw")) or tarinfo.name.endswith(".sh"):
+                tarinfo.mode = 0o755
+            return tarinfo
+
         with tarfile.open(fileobj=stream, mode='w') as tar:
             if path.exists():
-                for item in os.listdir(path):
-                    item_path = path / item
-                    tar.add(item_path, arcname=item)
+                # Add everything in the directory to the root of the tar
+                tar.add(str(path), arcname="", filter=tar_filter)
+
         stream.seek(0)
         return stream
 

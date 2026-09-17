@@ -95,9 +95,12 @@ export default function AgentActivityScreen() {
         {/* Live Reasoning (Streaming tokens) */}
         {thinkingText ? (
             <Card className="border-primary/30 bg-primary/5">
-                <CardHeader className="py-3 flex-row items-center gap-2">
-                    <Text className="text-sm">🧠</Text>
-                    <CardTitle><Text variant="small" weight="bold" className="text-primary">Live Reasoning</Text></CardTitle>
+                <CardHeader className="py-3 flex-row items-center justify-between">
+                    <View className="flex-row items-center gap-2">
+                        <Text className="text-sm">🧠</Text>
+                        <CardTitle><Text variant="small" weight="bold" className="text-primary">Live Reasoning</Text></CardTitle>
+                    </View>
+                    <Text variant="small" className="text-[10px] text-primary/60 font-mono">STREAMING</Text>
                 </CardHeader>
                 <CardContent className="py-2">
                     <Text variant="small" className="font-mono text-xs leading-5">
@@ -121,17 +124,23 @@ export default function AgentActivityScreen() {
                     </Text>
                 )}
                 {[...events].reverse().map((event, i) => (
-                    <View key={i} className="gap-1">
+                    <View key={i} className="gap-1 mb-1">
                         <View className="flex-row items-center gap-2">
-                             <Text variant="small" className="text-[10px] font-mono text-muted-foreground">
+                             <Text variant="small" className="text-[10px] font-mono text-muted-foreground/60">
                                 {new Date(event.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                              </Text>
                              <ActivityBadge
-                                label={event.event_type.replace('_', ' ').toUpperCase()}
-                                variant="secondary"
+                                label={event.event_type === 'thinking_chunk' ? 'BRAINSTORMING' : event.event_type.replace('_', ' ').toUpperCase()}
+                                type={event.event_type}
                              />
                         </View>
-                        <Text variant="small" className="leading-5">{event.message}</Text>
+                        <Text
+                            variant="small"
+                            numberOfLines={event.event_type === 'thinking_chunk' ? 1 : undefined}
+                            className={`leading-5 ${event.event_type === 'failed' || event.event_type === 'step_failed' ? 'text-destructive/90' : ''}`}
+                        >
+                            {event.message}
+                        </Text>
                     </View>
                 ))}
             </ScrollView>
@@ -141,6 +150,7 @@ export default function AgentActivityScreen() {
         {(isCompleted || isFailed) && (
             <View className="mt-4 mb-12">
                 <Button
+                    variant={isFailed ? "outline" : "default"}
                     label={isCompleted ? "Review Changes" : "Return to Backlog"}
                     onPress={() => {
                         if (isCompleted) {
@@ -157,10 +167,30 @@ export default function AgentActivityScreen() {
   );
 }
 
-function ActivityBadge({ label, variant }: { label: string, variant: 'default' | 'secondary' }) {
+function ActivityBadge({ label, type }: { label: string, type: string }) {
+    let bgColor = 'bg-muted';
+    let textColor = 'text-muted-foreground';
+
+    if (type === 'completed' || type === 'step_completed') {
+        bgColor = 'bg-green-500/10';
+        textColor = 'text-green-600';
+    } else if (type === 'failed' || type === 'step_failed') {
+        bgColor = 'bg-destructive/10';
+        textColor = 'text-destructive';
+    } else if (type === 'agent_started' || type === 'step_started') {
+        bgColor = 'bg-primary/10';
+        textColor = 'text-primary';
+    } else if (type === 'file_changed') {
+        bgColor = 'bg-blue-500/10';
+        textColor = 'text-blue-600';
+    } else if (type === 'thinking_chunk') {
+        bgColor = 'bg-amber-500/10';
+        textColor = 'text-amber-600';
+    }
+
     return (
-        <View className={`px-2 py-0.5 rounded-md ${variant === 'secondary' ? 'bg-muted' : 'bg-primary'} scale-75 origin-left`}>
-            <Text className={`text-[10px] font-bold ${variant === 'secondary' ? 'text-muted-foreground' : 'text-primary-foreground'}`}>
+        <View className={`px-2 py-0.5 rounded-md ${bgColor} scale-75 origin-left`}>
+            <Text className={`text-[10px] font-bold ${textColor}`}>
                 {label}
             </Text>
         </View>

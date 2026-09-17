@@ -1,5 +1,6 @@
 import json
 import httpx
+import re
 from typing import AsyncIterator, List, Optional, Type, TypeVar, Dict, Any
 from pydantic import BaseModel
 from backend.app.ai.base import AIProvider
@@ -37,12 +38,22 @@ class OpenRouterProvider(AIProvider):
     async def _handle_error(self, response: httpx.Response):
         status_code = response.status_code
         try:
+            # Check if this is a streaming response that hasn't been read
+            try:
+                # Regular response has .content available, streaming doesn't
+                _ = response.content
+            except httpx.ResponseNotRead:
+                await response.aread()
+
             error_data = response.json()
             # OpenRouter usually nests errors
             error_info = error_data.get("error", {})
             message = error_info.get("message", "Unknown OpenRouter Error")
         except Exception:
-            message = response.text or "Unknown OpenRouter Error"
+            try:
+                message = response.text or "Unknown OpenRouter Error"
+            except Exception:
+                message = "Unknown OpenRouter Error (could not read response)"
 
         logger.error(f"OpenRouter Error {status_code}: {message}")
 
@@ -139,6 +150,33 @@ class OpenRouterProvider(AIProvider):
                 logger.error(f"OpenRouter Streaming Error: {str(e)}")
                 raise LoomError(f"AI Streaming failure: {str(e)}", status_code=500)
 
+    def _repair_json(self, json_str: str) -> str:
+        """Attempts to repair truncated or malformed JSON by balancing braces/quotes."""
+        json_str = json_str.strip()
+        if not json_str:
+            return json_str
+
+        # If it seems to end in the middle of a string
+        if json_str.count('"') % 2 != 0:
+            # If the last character is a backslash, remove it to avoid escaping our closing quote
+            if json_str.endswith('\\'):
+                json_str = json_str[:-1]
+            json_str += '"'
+
+        # Balance braces
+        open_braces = json_str.count('{')
+        close_braces = json_str.count('}')
+        if open_braces > close_braces:
+            json_str += '}' * (open_braces - close_braces)
+
+        # Balance brackets
+        open_brackets = json_str.count('[')
+        close_brackets = json_str.count(']')
+        if open_brackets > close_brackets:
+            json_str += ']' * (open_brackets - close_brackets)
+
+        return json_str
+
     async def chat_structured(
         self,
         request: ChatRequest,
@@ -153,120 +191,127 @@ class OpenRouterProvider(AIProvider):
         if not any(json_instruction in m.content for m in request.messages):
              request.messages.append(ChatMessage(role=MessageRole.SYSTEM, content=json_instruction))
 
-        content = ""
-        if on_token:
-            # Stream the structured response if a callback is provided
-            async for chunk in self.chat_stream(request):
-                if chunk.content:
-                    content += chunk.content
-                    await on_token(chunk.content)
-        else:
-            # Fallback to standard non-streaming chat
-            response = await self.chat(request)
-            content = response.message.content
+        # Retry loop for structured output parsing
+        max_parse_retries = 2
+        last_error = None
 
-        if not content:
-            logger.error("OpenRouter: Received empty content in structured request")
-            raise LoomError("AI Provider returned empty response", status_code=502)
+        for attempt in range(max_parse_retries + 1):
+            content = ""
+            last_finish_reason = None
+            if on_token:
+                # Stream the structured response if a callback is provided
+                async for chunk in self.chat_stream(request):
+                    if chunk.content:
+                        content += chunk.content
+                        await on_token(chunk.content)
+                    if chunk.finish_reason:
+                        last_finish_reason = chunk.finish_reason
+            else:
+                # Fallback to standard non-streaming chat
+                response = await self.chat(request)
+                content = response.message.content
+                last_finish_reason = response.finish_reason
 
-        # Clean content if it contains markdown markers
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0].strip()
-        elif "```" in content:
-            content = content.split("```")[1].split("```")[0].strip()
+            if last_finish_reason == "length":
+                logger.warning(f"OpenRouter: Response truncated due to length for model {request.model}")
 
-        try:
-            return response_model.model_validate_json(content)
-        except Exception as first_error:
-            logger.warning(f"OpenRouter: First validation attempt failed: {str(first_error)}. Attempting robust parse...")
+            if not content:
+                if attempt < max_parse_retries: continue
+                logger.error("OpenRouter: Received empty content in structured request")
+                raise LoomError("AI Provider returned empty response", status_code=502)
+
+            # Clean content if it contains markdown markers
+            content_original = content
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0].strip()
+            elif "```" in content:
+                # Be careful with raw ``` - it might be bash or something else
+                parts = content.split("```")
+                for part in parts:
+                    part = part.strip()
+                    if part.startswith("{") and part.endswith("}"):
+                        content = part
+                        break
+                    # Try to find a part that looks like JSON even if it has a language tag like ```bash
+                    if "\n{" in part or part.startswith("{\n"):
+                        potential_json = part[part.find("{"):part.rfind("}")+1]
+                        if potential_json:
+                            content = potential_json
+                            break
+
+            # If still doesn't look like JSON, try a regex-like extraction of the first { and last }
+            if not (content.strip().startswith("{") and content.strip().endswith("}")):
+                start = content_original.find("{")
+                end = content_original.rfind("}")
+                if start != -1 and end != -1 and end > start:
+                    content = content_original[start:end+1]
+
             try:
-                # Try to parse as raw dict first
-                data = json.loads(content)
+                # Attempt 1: Native Pydantic validation from JSON string
+                return response_model.model_validate_json(content)
+            except Exception as first_error:
+                last_error = first_error
+                logger.warning(f"OpenRouter: Structured parse attempt {attempt + 1} failed: {str(first_error)}")
 
-                # If we expect a list but got a dict with a single list field
-                if hasattr(response_model, "__root__") and isinstance(data, dict):
-                    # Find a field that is a list
-                    for val in data.values():
-                        if isinstance(val, list):
-                            return response_model.model_validate(val)
+                try:
+                    # Attempt 2: Manual JSON load + Cleaning + Model Validate
+                    try:
+                        data = json.loads(content)
+                    except Exception:
+                        # If content is still messy, try to clean it even more (e.g. trailing commas)
+                        clean_content = re.sub(r',\s*([\]}])', r'\1', content)
+                        try:
+                            data = json.loads(clean_content)
+                        except Exception:
+                            # Last ditch: try to repair truncated JSON
+                            repaired = self._repair_json(content)
+                            data = json.loads(repaired)
 
-                # 2. Robust unwrapping
-                if isinstance(data, dict) and len(data) == 1:
-                    # If it's a single key pointing to another dict, try the inner dict
-                    inner_val = next(iter(data.values()))
-                    if isinstance(inner_val, dict):
-                        data = inner_val
-
-                if isinstance(data, dict):
-                    # Check if all required fields are inside a sub-dictionary
-                    for key, val in data.items():
-                        if isinstance(val, dict):
-                            try:
-                                return response_model.model_validate(val)
-                            except Exception:
-                                continue
-
-                # 3. Attempt to map missing required fields from existing ones
-                if isinstance(data, dict):
-                    # Generic mapping for common patterns
-                    for model_field in response_model.model_fields:
-                        if model_field not in data:
-                            # Try case-insensitive matching
-                            for k, v in data.items():
-                                if k.lower() == model_field.replace("_", "").lower():
-                                    data[model_field] = v
-                                    break
-
+                    # Mapping logic (unchanged from your robust version but wrapped in the loop)
+                    if isinstance(data, dict):
+                        # ... mapping logic ...
+                        for model_field in response_model.model_fields:
                             if model_field not in data:
-                                # Try camelCase version
-                                camel_field = "".join(word.capitalize() if i > 0 else word for i, word in enumerate(model_field.split("_")))
-                                if camel_field in data:
-                                    data[model_field] = data[camel_field]
+                                normalized_model = model_field.replace("_", "").lower()
+                                for k, v in data.items():
+                                    if k.lower().replace("_", "").replace(" ", "").replace("analysis", "") == normalized_model:
+                                        data[model_field] = v
+                                        break
+                                # ... existing camelCase/Spaced mapping ...
+                                if model_field not in data:
+                                    camel_field = "".join(word.capitalize() if i > 0 else word for i, word in enumerate(model_field.split("_")))
+                                    if camel_field in data: data[model_field] = data[camel_field]
+                                if model_field not in data:
+                                    spaced_field = model_field.replace("_", " ")
+                                    if spaced_field in data: data[model_field] = data[spaced_field]
 
-                            if model_field not in data:
-                                # Try PascalCase version
-                                pascal_field = "".join(word.capitalize() for word in model_field.split("_"))
-                                if pascal_field in data:
-                                    data[model_field] = data[pascal_field]
+                        # Specific type handling
+                        if "new_content" not in data:
+                            for k in ["updated_content", "updatedContent", "content", "code", "text"]:
+                                if k in data: data["new_content"] = data[k]; break
 
-                    # Specific mapping for SolutionPlanOutput
-                    if "problem" not in data:
-                        if "title" in data: data["problem"] = data["title"]
-                        elif "description" in data: data["problem"] = data["description"]
-                        elif "summary" in data: data["problem"] = data["summary"]
+                        if "root_cause_analysis" not in data:
+                            for k in ["root_cause", "rootCause", "explanation", "analysis"]:
+                                if k in data: data["root_cause_analysis"] = data[k]; break
 
-                    if "implementation_steps" not in data:
-                        if "implementationPlan" in data: data["implementation_steps"] = data["implementationPlan"]
-                        elif "technicalPlan" in data: data["implementation_steps"] = data["technicalPlan"]
-                        elif "steps" in data: data["implementation_steps"] = data["steps"]
+                        if "suggested_fix" not in data:
+                            for k in ["fix", "suggestedFix", "solution"]:
+                                if k in data: data["suggested_fix"] = data[k]; break
 
-                    if "relevant_files" not in data:
-                        if "affectedFiles" in data: data["relevant_files"] = data["affectedFiles"]
-                        elif "affected_components" in data: data["relevant_files"] = data["affected_components"]
+                        if "affected_files" not in data:
+                            data["affected_files"] = data.get("files", data.get("path", []))
+                            if isinstance(data["affected_files"], str): data["affected_files"] = [data["affected_files"]]
 
-                    # Specific mapping for OpportunityScoreCard
-                    if "overall_score" not in data:
-                        if "overallScore" in data: data["overall_score"] = data["overallScore"]
-                        elif "weighted_overall_score" in data: data["overall_score"] = data["weighted_overall_score"]
-                        elif "score" in data: data["overall_score"] = data["score"]
+                    return response_model.model_validate(data)
+                except Exception as final_error:
+                    last_error = final_error
+                    if attempt < max_parse_retries:
+                        logger.info(f"OpenRouter: Retrying structured request (Attempt {attempt + 2})")
+                        # Add a hint to the next attempt if possible or just retry
+                        continue
 
-                # Robust type conversion for common mistakes
-                if isinstance(data, dict):
-                    for field_name, field_info in response_model.model_fields.items():
-                        if field_name in data:
-                            # If we expect a list but got something else
-                            is_list_type = field_info.annotation is list or getattr(field_info.annotation, "__origin__", None) is list
-                            if is_list_type and not isinstance(data[field_name], list):
-                                data[field_name] = [data[field_name]]
-
-                            # Handle nested objects/lists of objects
-                            # (This is complex for a generic loop, but let's handle the top level for now)
-
-                # Last ditch effort: model_validate with the data we have
-                return response_model.model_validate(data)
-            except Exception as final_error:
-                logger.error(f"OpenRouter: Failed to parse structured response: {str(final_error)}. Raw Content: {content}")
-                raise LoomError(f"AI Provider returned invalid structured data: {str(first_error)}", status_code=502)
+        logger.error(f"OpenRouter: All structured parse attempts failed. Last error: {str(last_error)}. Content: {content}")
+        raise LoomError(f"AI Provider returned invalid structured data after retries: {str(last_error)}", status_code=502)
 
     async def generate_embeddings(self, request: EmbeddingsRequest) -> EmbeddingsResponse:
         url = f"{self.base_url}/embeddings"

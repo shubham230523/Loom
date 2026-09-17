@@ -9,7 +9,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from backend.app.database import Repository, RepositoryIndex, Opportunity, Issue, Contribution, SolutionPlan, TestRun, CodeReview
+from backend.app.database import Repository, RepositoryIndex, Opportunity, Issue, Contribution, SolutionPlan, TestRun, CodeReview, SessionLocal
 from backend.app.repository.service import repository_service, Workspace
 from backend.app.github.service import github_service, GitHubClient
 from backend.app.agents.solution_planner import solution_planner_agent
@@ -101,7 +101,8 @@ class ContributionService:
                 .order_by(RepositoryIndex.created_at.desc())
                 .limit(1)
             )
-            index = (await db.execute(query)).scalars().first()
+            result = await db.execute(query)
+            index = result.scalars().first()
 
             if not index:
                  raise LoomError("Repository must be indexed before planning", status_code=400)
@@ -130,7 +131,8 @@ class ContributionService:
             # 5. Persist Plan
             # Check for existing plan to avoid UniqueViolationError
             query = select(SolutionPlan).where(SolutionPlan.contribution_id == contribution_id)
-            plan = (await db.execute(query)).scalars().first()
+            result = await db.execute(query)
+            plan = result.scalars().first()
 
             if plan:
                 # Update existing plan
@@ -174,11 +176,13 @@ class ContributionService:
             }
         except Exception as e:
             # Important: Rollback the session to clear any IntegrityErrors/poisoned transactions
-            await db.rollback()
+            try:
+                await db.rollback()
+            except Exception:
+                pass
 
             # Use a fresh session to log the failure cleanly to avoid poisoned/closed transaction errors
             try:
-                from backend.app.database import SessionLocal
                 async with SessionLocal() as log_db:
                     await agent_run_service.emit_event(log_db, agent_run.id, "failed", f"Planning failed: {str(e)}")
                     await agent_run_service.complete_run(log_db, agent_run.id, success=False)
@@ -299,21 +303,32 @@ class ContributionService:
         client: GitHubClient
     ):
         """Long running background implementation task using its own fresh session."""
-        from backend.app.database import SessionLocal
         async with SessionLocal() as db:
             try:
+                # Use scalar_one_or_none and selectinload for full safety in background
                 query = (
-                    select(Contribution, Opportunity, Repository, SolutionPlan)
-                    .join(Opportunity, Contribution.opportunity_id == Opportunity.id)
-                    .join(Repository, Contribution.repository_id == Repository.id)
-                    .join(SolutionPlan, Contribution.id == SolutionPlan.contribution_id)
+                    select(Contribution)
+                    .options(
+                        selectinload(Contribution.opportunity),
+                        selectinload(Contribution.repository),
+                        selectinload(Contribution.solution_plan)
+                    )
                     .where(Contribution.id == contribution_id)
                 )
                 result = await db.execute(query)
-                row = result.first()
-                if not row:
+                contribution = result.scalar_one_or_none()
+
+                if not contribution:
+                    logger.error(f"Background Implement: Contribution {contribution_id} not found")
                     return
-                contribution, opportunity, repo, plan = row
+
+                opportunity = contribution.opportunity
+                repo = contribution.repository
+                plan = contribution.solution_plan
+
+                if not plan:
+                    logger.error(f"Background Implement: Plan not found for {contribution_id}")
+                    return
 
                 # 5. Re-instantiate workspace
                 workspace = Workspace(workspace_id=contribution.workspace_id)
@@ -399,6 +414,10 @@ class ContributionService:
 
                     # --- PHASE B: CODE REVIEW ---
                     if not final_impl_result.success:
+                        await agent_run_service.emit_event(
+                            db=db, agent_run_id=agent_run_id, event_type="failed",
+                            message="Implementation failed after all retry attempts. Check logs for details."
+                        )
                         break
 
                     await agent_run_service.emit_event(db, agent_run_id, "review_started", "Triggering autonomous technical audit.")
