@@ -133,34 +133,90 @@ class GeminiProvider(AIProvider):
         if mapped["system_instruction"]:
             payload["system_instruction"] = mapped["system_instruction"]
 
+        if request.response_format:
+            payload["generationConfig"]["response_mime_type"] = "application/json"
+
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             try:
                 async with client.stream("POST", url, json=payload) as response:
                     if response.status_code != 200:
                         await self._handle_error(response)
 
-                    # Gemini streaming returns a JSON array of responses
-                    # but it is usually sent chunk by chunk
-                    async for line in response.aiter_lines():
-                        if not line: continue
-                        # Strip comma if it's part of the array
-                        clean_line = line.strip().strip("[").strip("]").strip(",")
-                        if not clean_line: continue
+                    # Better streaming parser for Gemini's JSON array format
+                    buffer = ""
+                    async for chunk in response.aiter_text():
+                        buffer += chunk
+                        # Gemini streams objects inside a JSON array
+                        # We need to extract each object
+                        while True:
+                            buffer = buffer.strip()
+                            if not buffer:
+                                break
 
-                        try:
-                            data = json.loads(clean_line)
-                            candidate = data.get("candidates", [{}])[0]
-                            content = candidate.get("content", {})
-                            parts = content.get("parts", [{}])
-                            text = parts[0].get("text", "")
+                            # Handle array start/end/comma
+                            if buffer.startswith("["):
+                                buffer = buffer[1:]
+                                continue
+                            if buffer.startswith(","):
+                                buffer = buffer[1:]
+                                continue
+                            if buffer.startswith("]"):
+                                buffer = buffer[1:]
+                                break
 
-                            if text:
-                                yield ChatStreamChunk(content=text)
+                            # Try to find a complete JSON object in the buffer
+                            try:
+                                # Count braces to find object end
+                                if not buffer.startswith("{"):
+                                    # Skip anything that's not a start of an object
+                                    # (might be whitespace or array markers we missed)
+                                    first_brace = buffer.find("{")
+                                    if first_brace == -1:
+                                        break
+                                    buffer = buffer[first_brace:]
 
-                            if candidate.get("finishReason"):
-                                yield ChatStreamChunk(content="", finish_reason=candidate.get("finishReason"))
-                        except Exception:
-                            continue
+                                brace_count = 0
+                                found_end = False
+                                in_string = False
+                                escaped = False
+
+                                for i, char in enumerate(buffer):
+                                    if char == '"' and not escaped:
+                                        in_string = not in_string
+                                    if not in_string:
+                                        if char == "{":
+                                            brace_count += 1
+                                        elif char == "}":
+                                            brace_count -= 1
+                                            if brace_count == 0:
+                                                obj_str = buffer[:i+1]
+                                                buffer = buffer[i+1:]
+                                                found_end = True
+                                                break
+
+                                    if char == "\\" and not escaped:
+                                        escaped = True
+                                    else:
+                                        escaped = False
+
+                                if found_end:
+                                    data = json.loads(obj_str)
+                                    candidate = data.get("candidates", [{}])[0]
+                                    content = candidate.get("content", {})
+                                    parts = content.get("parts", [{}])
+                                    text = parts[0].get("text", "")
+
+                                    if text:
+                                        yield ChatStreamChunk(content=text)
+
+                                    if candidate.get("finishReason"):
+                                        yield ChatStreamChunk(content="", finish_reason=candidate.get("finishReason"))
+                                else:
+                                    # Incomplete object, wait for more data
+                                    break
+                            except Exception:
+                                # If parsing fails, it might be an incomplete object
+                                break
 
             except Exception as e:
                 logger.error(f"Gemini Streaming Error: {str(e)}")
@@ -176,28 +232,100 @@ class GeminiProvider(AIProvider):
         request.response_format = {"type": "json_object"}
 
         # Add instruction to ensure JSON
-        json_instruction = f"Return response as a valid JSON object matching the following schema: {response_model.model_json_schema()}"
-        request.messages.append(ChatMessage(role=MessageRole.SYSTEM, content=json_instruction))
+        json_instruction = f"Return response as a valid JSON object matching the requested schema. DO NOT include markdown formatting like ```json."
+        if not any(json_instruction in m.content for m in request.messages):
+             request.messages.append(ChatMessage(role=MessageRole.SYSTEM, content=json_instruction))
 
         content = ""
+        last_finish_reason = None
         if on_token:
             async for chunk in self.chat_stream(request):
                 if chunk.content:
                     content += chunk.content
                     await on_token(chunk.content)
+                if chunk.finish_reason:
+                    last_finish_reason = chunk.finish_reason
         else:
             response = await self.chat(request)
             content = response.message.content
+            last_finish_reason = response.finish_reason
+
+        if not content:
+            logger.error("Gemini: Received empty content in structured request")
+            raise LoomError("AI Provider returned empty response", status_code=502)
+
+        # Clean content if it contains markdown markers
+        content_original = content
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0].strip()
+        elif "```" in content:
+            parts = content.split("```")
+            for part in parts:
+                part = part.strip()
+                if part.startswith("{") and part.endswith("}"):
+                    content = part
+                    break
+
+        # Basic cleanup
+        content = content.strip()
+        if not (content.startswith("{") and content.endswith("}")):
+            start = content_original.find("{")
+            end = content_original.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                content = content_original[start:end+1]
 
         try:
             return response_model.model_validate_json(content)
-        except Exception as e:
-            logger.error(f"Failed to parse structured Gemini response: {str(e)}. Content: {content}")
-            raise LoomError("AI Provider returned invalid structured data", status_code=502)
+        except Exception as first_error:
+            logger.warning(f"Gemini: First validation attempt failed: {str(first_error)}. Attempting robust parse...")
+            try:
+                # Try to parse as raw dict first
+                try:
+                    data = json.loads(content)
+                except Exception:
+                    clean_content = re.sub(r',\s*([\]}])', r'\1', content)
+                    data = json.loads(clean_content)
+
+                # Use the same robust mapping logic as OpenRouter
+                if isinstance(data, dict):
+                    for model_field in response_model.model_fields:
+                        if model_field not in data:
+                            # Try variations
+                            normalized_model = model_field.replace("_", "").lower()
+                            for k, v in data.items():
+                                if k.lower().replace("_", "").replace(" ", "").replace("analysis", "") == normalized_model:
+                                    data[model_field] = v
+                                    break
+
+                            if model_field not in data:
+                                # camelCase
+                                camel_field = "".join(word.capitalize() if i > 0 else word for i, word in enumerate(model_field.split("_")))
+                                if camel_field in data: data[model_field] = data[camel_field]
+
+                    # Specific mapping for common fields
+                    if "new_content" not in data:
+                        for k in ["updated_content", "updatedContent", "content", "code", "text"]:
+                            if k in data: data["new_content"] = data[k]; break
+
+                    if "root_cause_analysis" not in data:
+                        for k in ["root_cause", "rootCause", "explanation", "analysis"]:
+                            if k in data: data["root_cause_analysis"] = data[k]; break
+
+                    if "suggested_fix" not in data:
+                        for k in ["fix", "suggestedFix", "solution"]:
+                            if k in data: data["suggested_fix"] = data[k]; break
+
+                return response_model.model_validate(data)
+            except Exception as final_error:
+                logger.error(f"Failed to parse structured Gemini response: {str(final_error)}. Content: {content}")
+                raise LoomError("AI Provider returned invalid structured data", status_code=502)
 
     async def generate_embeddings(self, request: EmbeddingsRequest) -> EmbeddingsResponse:
         model = request.model or "text-embedding-004"
-        url = self._get_url(model, "embedContent")
+        # Force v1 for embeddings if text-embedding-004 is used, as v1beta might not have it in all regions
+        # or use v1 URL directly
+        v1_base = "https://generativelanguage.googleapis.com/v1"
+        url = f"{v1_base}/models/{model}:embedContent?key={self.api_key}"
 
         inputs = request.input if isinstance(request.input, list) else [request.input]
 
