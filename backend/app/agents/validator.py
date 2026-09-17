@@ -37,7 +37,7 @@ class ValidationAgent:
         # 1. Verify Basic Lifecycle State
         # --- Tests ---
         query = select(TestRun).where(TestRun.contribution_id == contribution.id).order_by(TestRun.timestamp.desc()).limit(1)
-        latest_test = (await db.execute(query)).scalars().first()
+        latest_test = (await db.execute(query)).scalar_one_or_none()
 
         if not latest_test or latest_test.status != "success":
             issues.append(ValidationIssue(
@@ -49,7 +49,7 @@ class ValidationAgent:
 
         # --- Review ---
         query = select(CodeReview).where(CodeReview.contribution_id == contribution.id).order_by(CodeReview.created_at.desc()).limit(1)
-        latest_review = (await db.execute(query)).scalars().first()
+        latest_review = (await db.execute(query)).scalar_one_or_none()
 
         if not latest_review or latest_review.decision != "APPROVE":
             issues.append(ValidationIssue(

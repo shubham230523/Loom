@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, AliasChoices
 from typing import List, Dict, Any, Optional
 from enum import Enum
 from backend.app.ai import ai_gateway, ChatRequest, ChatMessage, MessageRole, TaskType
@@ -11,18 +11,57 @@ class ReviewDecision(str, Enum):
     REJECT = "REJECT"
 
 class ReviewIssue(BaseModel):
-    file_path: Optional[str] = Field(description="Path of the file containing the issue")
-    line_number: Optional[int] = Field(description="Specific line number if applicable")
-    category: str = Field(description="correctness, security, performance, style, etc.")
-    description: str = Field(description="Detailed explanation of the issue")
-    suggestion: Optional[str] = Field(description="How to fix the issue")
-    severity: str = Field(description="low, medium, high, critical")
+    file_path: Optional[str] = Field(
+        default=None,
+        description="Path of the file containing the issue",
+        validation_alias=AliasChoices("file_path", "path", "file", "filePath")
+    )
+    line_number: Optional[int] = Field(
+        default=None,
+        description="Specific line number if applicable",
+        validation_alias=AliasChoices("line_number", "line", "lineNumber")
+    )
+    category: str = Field(
+        default="correctness",
+        description="correctness, security, performance, style, etc.",
+        validation_alias=AliasChoices("category", "type", "issue_type")
+    )
+    description: str = Field(
+        description="Detailed explanation of the issue",
+        validation_alias=AliasChoices("description", "message", "issue", "detail")
+    )
+    suggestion: Optional[str] = Field(
+        default=None,
+        description="How to fix the issue",
+        validation_alias=AliasChoices("suggestion", "fix", "recommendation")
+    )
+    severity: str = Field(
+        default="medium",
+        description="low, medium, high, critical",
+        validation_alias=AliasChoices("severity", "priority", "level")
+    )
 
 class CodeReviewResult(BaseModel):
     decision: ReviewDecision
-    summary: str = Field(description="High-level overview of the review findings")
-    issues: List[ReviewIssue] = Field(default_factory=list)
-    confidence: float = Field(ge=0, le=1, description="Agent's confidence in the review")
+    summary: str = Field(
+        description="High-level overview of the review findings",
+        validation_alias=AliasChoices("summary", "feedback", "review_summary", "comments", "overview")
+    )
+    issues: List[ReviewIssue] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("issues", "findings", "problems", "suggested_fixes")
+    )
+    confidence: float = Field(
+        default=0.9,
+        ge=0, le=1,
+        description="Agent's confidence in the review",
+        validation_alias=AliasChoices("confidence", "certainty", "score")
+    )
+
+    model_config = {
+        "populate_by_name": True,
+        "extra": "ignore"
+    }
 
 class CodeReviewAgent:
     async def review_changes(

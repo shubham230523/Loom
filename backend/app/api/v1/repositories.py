@@ -51,7 +51,7 @@ async def get_repository_details(
         uuid_id = UUID(repository_id)
         query = select(Repository).where(Repository.id == uuid_id)
         result = await db.execute(query)
-        repo = result.scalars().first()
+        repo = result.scalar_one_or_none()
     except ValueError:
         pass
 
@@ -61,7 +61,7 @@ async def get_repository_details(
             github_id = int(repository_id)
             query = select(Repository).where(Repository.github_repo_id == github_id)
             result = await db.execute(query)
-            repo = result.scalars().first()
+            repo = result.scalar_one_or_none()
         except ValueError:
             pass
 
@@ -70,7 +70,7 @@ async def get_repository_details(
         index_query = select(RepositoryIndex).where(
             RepositoryIndex.repository_id == repo.id
         ).order_by(desc(RepositoryIndex.created_at)).limit(1)
-        latest_index = (await db.execute(index_query)).scalars().first()
+        latest_index = (await db.execute(index_query)).scalar_one_or_none()
 
         # Fetch fresh metadata from GitHub to ensure stars/avatar are current
         client = await github_service.get_client_for_user(db, current_user)
@@ -129,7 +129,7 @@ async def initialize_repository(
     """Imports a repository into the local database and starts indexing."""
     query = select(Repository).where(Repository.github_repo_id == github_id)
     result = await db.execute(query)
-    repo = result.scalars().first()
+    repo = result.scalar_one_or_none()
 
     client = await github_service.get_client_for_user(db, current_user)
 
@@ -166,7 +166,7 @@ async def run_indexing(repo_id: str, access_token: str):
     async with SessionLocal() as db:
         try:
             query = select(Repository).where(Repository.id == UUID(repo_id))
-            repo = (await db.execute(query)).scalars().first()
+            repo = (await db.execute(query)).scalar_one_or_none()
             if repo:
                 await repository_indexer.index_repository(db, repo, access_token)
         except Exception as e:
@@ -192,7 +192,7 @@ async def discover_opportunities(
     logger.info(f"API: Received discovery request for repository {repository_id}")
     query = select(Repository).where(Repository.id == repository_id)
     result = await db.execute(query)
-    repo = result.scalars().first()
+    repo = result.scalar_one_or_none()
     if not repo:
         logger.error(f"API: Repository {repository_id} not found")
         raise HTTPException(status_code=404, detail="Repository not found")
@@ -204,7 +204,7 @@ async def discover_opportunities(
         RepositoryIndex.repository_id == repo.id,
         RepositoryIndex.status == "completed"
     ).order_by(desc(RepositoryIndex.created_at)).limit(1)
-    index = (await db.execute(index_query)).scalars().first()
+    index = (await db.execute(index_query)).scalar_one_or_none()
 
     if not index:
         # Check if indexing is already in progress
@@ -212,7 +212,7 @@ async def discover_opportunities(
             RepositoryIndex.repository_id == repo.id,
             RepositoryIndex.status == "in_progress"
         ).order_by(desc(RepositoryIndex.created_at)).limit(1)
-        active_index = (await db.execute(active_index_query)).scalars().first()
+        active_index = (await db.execute(active_index_query)).scalar_one_or_none()
 
         if not active_index:
             logger.info(f"API: Triggering on-demand indexing for {repo.full_name}")
@@ -235,7 +235,7 @@ async def run_discovery(repo_id: str, access_token: str):
     async with SessionLocal() as db:
         try:
             query = select(Repository).where(Repository.id == UUID(repo_id))
-            repo = (await db.execute(query)).scalars().first()
+            repo = (await db.execute(query)).scalar_one_or_none()
             if repo:
                 from backend.app.github.client import GitHubClient
                 client = GitHubClient(access_token=access_token)
@@ -252,14 +252,14 @@ async def score_opportunity(
 ):
     """Triggers AI scoring for an opportunity."""
     query = select(Repository).where(Repository.id == repository_id)
-    repo = (await db.execute(query)).scalars().first()
+    repo = (await db.execute(query)).scalar_one_or_none()
     if not repo: raise HTTPException(status_code=404, detail="Repository not found")
 
     index_query = select(RepositoryIndex).where(
         RepositoryIndex.repository_id == repository_id,
         RepositoryIndex.status == "completed"
     ).order_by(desc(RepositoryIndex.created_at)).limit(1)
-    index = (await db.execute(index_query)).scalars().first()
+    index = (await db.execute(index_query)).scalar_one_or_none()
     if not index: raise HTTPException(status_code=400, detail="Repository not indexed")
 
     client = await github_service.get_client_for_user(db, current_user)
@@ -291,7 +291,7 @@ async def get_contribution_details(
         selectinload(Contribution.opportunity)
     ).where(Contribution.id == contribution_id, Contribution.repository_id == repository_id)
     result = await db.execute(query)
-    contribution = result.scalars().first()
+    contribution = result.scalar_one_or_none()
     if not contribution: raise HTTPException(status_code=404, detail="Contribution not found")
     return contribution
 

@@ -51,7 +51,7 @@ class SandboxManager:
             # Use run_in_executor for long-running sync call
             import asyncio
             loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, self.client.images.pull, image)
+            await loop.run_in_executor(None, lambda: self.client.images.pull(image))
 
         # 2. Configure sandbox constraints
         # PIDs limit is supported in API 1.23+
@@ -126,16 +126,43 @@ class SandboxManager:
     def _create_tar_stream(self, path: Path) -> io.BytesIO:
         stream = io.BytesIO()
 
-        def tar_filter(tarinfo):
-            # Fix permissions for scripts (especially from Windows hosts)
-            if tarinfo.name.endswith(("gradlew", "mvnw")) or tarinfo.name.endswith(".sh"):
-                tarinfo.mode = 0o755
-            return tarinfo
-
         with tarfile.open(fileobj=stream, mode='w') as tar:
             if path.exists():
-                # Add everything in the directory to the root of the tar
-                tar.add(str(path), arcname="", filter=tar_filter)
+                script_files = ["gradlew", "mvnw"]
+
+                for root, dirs, files in os.walk(path):
+                    # Add directory records
+                    rel_root = Path(root).relative_to(path)
+                    if rel_root != Path("."):
+                        tar.add(str(root), arcname=str(rel_root), recursive=False)
+
+                    for file in files:
+                        full_path = Path(root) / file
+                        rel_path = full_path.relative_to(path)
+
+                        tar_info = tar.gettarinfo(str(full_path), arcname=str(rel_path))
+
+                        # Fix permissions and line endings for scripts (especially from Windows hosts)
+                        if file in script_files or file.endswith(".sh"):
+                            try:
+                                with open(full_path, "rb") as f:
+                                    content = f.read()
+
+                                # Convert CRLF to LF
+                                content = content.replace(b"\r\n", b"\n")
+
+                                tar_info.mode = 0o755
+                                tar_info.size = len(content)
+
+                                f_obj = io.BytesIO(content)
+                                tar.addfile(tar_info, f_obj)
+                                continue
+                            except Exception as e:
+                                logger.warning(f"Failed to process script {file}: {str(e)}")
+
+                        # Add standard file
+                        with open(full_path, "rb") as f:
+                            tar.addfile(tar_info, f)
 
         stream.seek(0)
         return stream

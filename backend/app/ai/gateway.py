@@ -138,9 +138,11 @@ class AIGateway:
         if task:
             request.model = model_router.get_model_for_task(task)
 
-        # Cache is disabled when streaming tokens to ensure real-time feedback
+        # Cache is disabled when streaming tokens or for debugging tasks to ensure fresh analysis
+        use_cache = settings.ENABLE_AI_CACHE and not on_token and task != TaskType.DEBUGGING
+
         cache_key = self._generate_cache_key(request, f"structured:{response_model.__name__}")
-        if settings.ENABLE_AI_CACHE and not on_token:
+        if use_cache:
             cached = await redis_service.get(cache_key)
             if cached:
                 logger.info(f"AI Gateway: Cache hit for structured request {response_model.__name__}")

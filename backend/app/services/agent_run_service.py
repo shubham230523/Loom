@@ -68,7 +68,8 @@ class AgentRunService:
         except Exception as e:
             logger.error(f"Failed to broadcast agent event: {str(e)}")
 
-        logger.info(f"Agent Event Emitted: {event_type} - {message}")
+        if event_type != "thinking_chunk":
+            logger.info(f"Agent Event Emitted: {event_type} - {message}")
 
     async def _persist_event(self, db: AsyncSession, agent_run_id: UUID, event_type: str, message: str, metadata: Optional[Dict[str, Any]]):
         event = AgentEvent(

@@ -69,11 +69,15 @@ class RepositoryService:
                     cmd,
                     cwd=str(cwd) if cwd else None,
                     stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True
+                    stderr=subprocess.PIPE
                 )
-                stdout, stderr = p.communicate()
-                return p.returncode, stdout.strip(), stderr.strip()
+                stdout_bytes, stderr_bytes = p.communicate()
+
+                # Use utf-8 with replacement to avoid crash on non-ASCII chars (common on Windows)
+                stdout = stdout_bytes.decode('utf-8', errors='replace').strip() if stdout_bytes is not None else ""
+                stderr = stderr_bytes.decode('utf-8', errors='replace').strip() if stderr_bytes is not None else ""
+
+                return p.returncode, stdout, stderr
 
             return await loop.run_in_executor(None, run_sync)
 

@@ -48,8 +48,11 @@ export function AgentTimeline({ events }: AgentTimelineProps) {
     const hasEvent = events.some(e => step.eventTypes.includes(e.event_type));
 
     if (hasEvent) {
-        // If a later step has started, this one is completed
-        if (index < lastStepWithEventsIndex) return 'completed';
+        // If any step AFTER this one has events, then this one is definitely completed
+        const laterStepHasStarted = STEPS.slice(index + 1).some(s =>
+            events.some(e => s.eventTypes.includes(e.event_type))
+        );
+        if (laterStepHasStarted) return 'completed';
 
         // If overall failed and this is the last step we were on
         if (isFailed && index === lastStepWithEventsIndex) return 'failed';

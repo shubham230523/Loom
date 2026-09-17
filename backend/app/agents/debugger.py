@@ -19,6 +19,11 @@ class DebuggingAnalysis(BaseModel):
         validation_alias=AliasChoices("affected_files", "files", "files_to_fix", "path")
     )
 
+    model_config = {
+        "populate_by_name": True,
+        "extra": "ignore"
+    }
+
 class DebuggerAgent:
     async def analyze_failure(
         self,

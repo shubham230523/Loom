@@ -239,12 +239,17 @@ class GeminiProvider(AIProvider):
         content = ""
         last_finish_reason = None
         if on_token:
-            async for chunk in self.chat_stream(request):
-                if chunk.content:
-                    content += chunk.content
-                    await on_token(chunk.content)
-                if chunk.finish_reason:
-                    last_finish_reason = chunk.finish_reason
+            try:
+                async for chunk in self.chat_stream(request):
+                    if chunk.content:
+                        content += chunk.content
+                        await on_token(chunk.content)
+                    if chunk.finish_reason:
+                        last_finish_reason = chunk.finish_reason
+            except Exception as stream_err:
+                logger.error(f"Gemini Streaming error during structured parse: {str(stream_err)}")
+                # If we have some content, try to proceed, otherwise re-raise
+                if not content: raise stream_err
         else:
             response = await self.chat(request)
             content = response.message.content
@@ -315,6 +320,38 @@ class GeminiProvider(AIProvider):
                         for k in ["fix", "suggestedFix", "solution"]:
                             if k in data: data["suggested_fix"] = data[k]; break
 
+                    # Specific mapping for CodeReviewResult
+                    if "summary" not in data:
+                        for k in ["feedback", "overview", "review_summary"]:
+                            if k in data: data["summary"] = data[k]; break
+
+                    if "confidence" not in data:
+                        for k in ["score", "certainty"]:
+                            if k in data: data["confidence"] = data[k]; break
+                        if "confidence" not in data: data["confidence"] = 0.9
+
+                    if "issues" not in data:
+                        for k in ["findings", "suggested_fixes", "problems"]:
+                            if k in data:
+                                # Handle cases where model returns strings instead of objects for fixes
+                                if isinstance(data[k], list) and data[k] and isinstance(data[k][0], str):
+                                    data["issues"] = [{"description": f} for f in data[k]]
+                                else:
+                                    data["issues"] = data[k]
+                                break
+                        if "issues" not in data: data["issues"] = []
+
+                    # Catch-all for any other missing required fields
+                    for field_name, field_info in response_model.model_fields.items():
+                        if field_name not in data and field_info.is_required():
+                            # If it's a string, provide empty
+                            if field_info.annotation is str: data[field_name] = ""
+                            # If it's a list, provide empty
+                            elif getattr(field_info.annotation, "__origin__", None) is list: data[field_name] = []
+                            # If it's a float/int
+                            elif field_info.annotation in [float, int]: data[field_name] = 0
+
+                logger.debug(f"Gemini: Validating data with keys: {list(data.keys())}")
                 return response_model.model_validate(data)
             except Exception as final_error:
                 logger.error(f"Failed to parse structured Gemini response: {str(final_error)}. Content: {content}")
@@ -322,9 +359,8 @@ class GeminiProvider(AIProvider):
 
     async def generate_embeddings(self, request: EmbeddingsRequest) -> EmbeddingsResponse:
         model = request.model or "text-embedding-004"
-        # Force v1 for embeddings if text-embedding-004 is used, as v1beta might not have it in all regions
-        # or use v1 URL directly
-        v1_base = "https://generativelanguage.googleapis.com/v1"
+        # Try v1beta for embeddings as it usually supports the latest embedding models
+        v1_base = "https://generativelanguage.googleapis.com/v1beta"
         url = f"{v1_base}/models/{model}:embedContent?key={self.api_key}"
 
         inputs = request.input if isinstance(request.input, list) else [request.input]

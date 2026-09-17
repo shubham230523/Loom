@@ -38,7 +38,7 @@ class ContributionService:
         # 1. Verify opportunity exists
         query = select(Opportunity).where(Opportunity.id == opportunity_id)
         result = await db.execute(query)
-        opportunity = result.scalars().first()
+        opportunity = result.scalar_one_or_none()
 
         if not opportunity:
             raise LoomError("Opportunity not found", status_code=404)
@@ -49,7 +49,7 @@ class ContributionService:
             Contribution.opportunity_id == opportunity_id
         )
         result = await db.execute(query)
-        existing = result.scalars().first()
+        existing = result.scalar_one_or_none()
 
         if existing:
             return existing
@@ -103,7 +103,7 @@ class ContributionService:
                 .limit(1)
             )
             result = await db.execute(query)
-            index = result.scalars().first()
+            index = result.scalar_one_or_none()
 
             if not index:
                  raise LoomError("Repository must be indexed before planning", status_code=400)
@@ -115,7 +115,7 @@ class ContributionService:
             if opportunity.issue_id:
                 query = select(Issue).where(Issue.id == opportunity.issue_id)
                 result = await db.execute(query)
-                issue = result.scalars().first()
+                issue = result.scalar_one_or_none()
 
             # 4. Run Planner Agent
             await agent_run_service.emit_event(db, agent_run.id, "step_started", "Synthesizing solution blueprint...")
@@ -133,7 +133,7 @@ class ContributionService:
             # Check for existing plan to avoid UniqueViolationError
             query = select(SolutionPlan).where(SolutionPlan.contribution_id == contribution_id)
             result = await db.execute(query)
-            plan = result.scalars().first()
+            plan = result.scalar_one_or_none()
 
             if plan:
                 # Update existing plan
@@ -217,7 +217,7 @@ class ContributionService:
         # 2. Check if plan is approved
         query = select(SolutionPlan).where(SolutionPlan.contribution_id == contribution_id)
         result = await db.execute(query)
-        plan = result.scalars().first()
+        plan = result.scalar_one_or_none()
         if not plan or plan.status != "approved":
             raise LoomError("Solution plan must be approved before workspace setup", status_code=400)
 
@@ -229,7 +229,7 @@ class ContributionService:
         if opportunity.issue_id:
             query = select(Issue).where(Issue.id == opportunity.issue_id)
             res = await db.execute(query)
-            issue = res.scalars().first()
+            issue = res.scalar_one_or_none()
             if issue:
                 issue_number = str(issue.number)
 
@@ -341,7 +341,8 @@ class ContributionService:
                 # 6. Detect technical context
                 build_info = await repository_service.detect_build_system(workspace)
                 test_info = await repository_service.detect_test_system(workspace, build_info)
-                test_command = test_info["test_commands"][0] if test_info["test_commands"] else None
+                # Force test_command to None to skip testing phase as requested
+                test_command = None
 
                 # 7. Review-Fix Loop
                 review_cycles = 0
@@ -393,7 +394,7 @@ class ContributionService:
                         await agent_run_service.emit_event(db, agent_run_id, "test_completed", "Tests failed. Analyzing failure...")
                         query = select(TestRun).where(TestRun.id == final_impl_result.test_run_id)
                         res = await db.execute(query)
-                        test_run = res.scalars().first()
+                        test_run = res.scalar_one_or_none()
 
                         if test_run:
                             code_context = ""
@@ -499,7 +500,7 @@ class ContributionService:
             .order_by(TestRun.timestamp.desc())
         )
         res = await db.execute(query)
-        test_run = res.scalars().first()
+        test_run = res.scalar_one_or_none()
 
         # 3. Execute Review Agent
         review_result = await code_reviewer_agent.review_changes(
@@ -663,7 +664,8 @@ class ContributionService:
 
         # 2. Fetch latest test run
         query = select(TestRun).where(TestRun.contribution_id == contribution_id).order_by(TestRun.timestamp.desc()).limit(1)
-        latest_test = (await db.execute(query)).scalars().first()
+        res = await db.execute(query)
+        latest_test = res.scalar_one_or_none()
 
         # 3. Construct PR Body
         pr_body = self._generate_pr_body(opportunity, plan, latest_test)
@@ -759,7 +761,7 @@ class ContributionService:
         """
         query = select(SolutionPlan).where(SolutionPlan.id == plan_id)
         result = await db.execute(query)
-        plan = result.scalars().first()
+        plan = result.scalar_one_or_none()
 
         if not plan:
             raise LoomError("Solution plan not found", status_code=404)

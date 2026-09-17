@@ -26,6 +26,11 @@ class FileChange(BaseModel):
         default="Applied planned changes"
     )
 
+    model_config = {
+        "populate_by_name": True,
+        "extra": "ignore"
+    }
+
 class ImplementationResult(BaseModel):
     files_modified: List[str]
     test_run_id: Optional[str] = None

@@ -33,7 +33,7 @@ class OpportunityService:
             RepositoryIndex.status == "completed"
         ).order_by(RepositoryIndex.created_at.desc()).limit(1)
         result = await db.execute(query)
-        index = result.scalars().first()
+        index = result.scalar_one_or_none()
 
         if not index:
             logger.warning(f"OpportunityService: No completed index found for {repository.full_name}.")
@@ -191,7 +191,7 @@ class OpportunityService:
     ) -> Optional[Opportunity]:
         query = select(Opportunity).where(Opportunity.id == opportunity_id)
         result = await db.execute(query)
-        return result.scalars().first()
+        return result.scalar_one_or_none()
 
     async def score_opportunity(
         self,
@@ -206,7 +206,7 @@ class OpportunityService:
         """
         query = select(Opportunity).where(Opportunity.id == opportunity_id)
         result = await db.execute(query)
-        opportunity = result.scalars().first()
+        opportunity = result.scalar_one_or_none()
 
         if not opportunity:
             return None

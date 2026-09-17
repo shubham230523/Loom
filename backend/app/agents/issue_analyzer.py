@@ -63,7 +63,7 @@ class IssueAnalyzerAgent:
             RepositoryIndex.repository_id == repository.id,
             RepositoryIndex.status == "completed"
         ).order_by(RepositoryIndex.created_at.desc()).limit(1)
-        index = (await db.execute(query)).scalars().first()
+        index = (await db.execute(query)).scalar_one_or_none()
 
         repo_summary = ""
         if index and index.summary:
