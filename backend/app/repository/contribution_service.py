@@ -516,6 +516,7 @@ class ContributionService:
             decision=review_result.decision.value,
             summary=review_result.summary,
             review_issues=[issue.model_dump() for issue in review_result.issues],
+            severity=None, # Now nullable in model
             confidence=review_result.confidence
         )
         db.add(review)

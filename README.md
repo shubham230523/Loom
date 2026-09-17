@@ -10,13 +10,17 @@ Instead of spending hours searching through repositories, understanding unfamili
 
 ---
 
-## 🚧 Development Status
+## 🚧 Development Status: Prototype & Mock-First
 
-**Loom is currently under active development.**
+**Loom is currently a functional prototype and architectural demonstration.**
 
-The project is being built as a production-oriented platform with real GitHub repositories, real code analysis, real development environments, and real Pull Requests.
+Due to current constraints on AI model reasoning consistency and sandboxed environment complexities, the end-to-end autonomous implementation flow is designed primarily for **demonstration purposes**.
 
-Loom does **not** use simulated repositories, fake issues, fake test results, or mock Pull Requests in its core workflow.
+- **Mock Implementation:** The system excels at demonstrating the "Plan-Implement-Review-PR" flow using deterministic mock tasks.
+- **AI Constraints:** Full autonomous reasoning on complex real-world repositories is currently limited by model window sizes and structured output reliability.
+- **Sandbox:** The Docker-based verification system is functional but requires significant local resource overhead for heavy build systems like Android/Gradle.
+
+Loom serves as a blueprint for how an agentic contribution platform should be architected, focusing on security, human-in-the-loop validation, and provider abstraction.
 
 ---
 

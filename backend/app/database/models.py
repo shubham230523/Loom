@@ -488,7 +488,7 @@ class CodeReview(Base):
     decision: Mapped[str] = mapped_column(String(50)) # approve, request_changes, comment
     summary: Mapped[str] = mapped_column(Text)
     review_issues: Mapped[Optional[List[Dict[str, Any]]]] = mapped_column(JSON, nullable=True)
-    severity: Mapped[str] = mapped_column(String(50)) # low, medium, high, critical
+    severity: Mapped[Optional[str]] = mapped_column(String(50), nullable=True) # low, medium, high, critical
     confidence: Mapped[float] = mapped_column(Float, default=0.0)
 
     created_at: Mapped[datetime] = mapped_column(
@@ -519,7 +519,7 @@ class SolutionPlan(Base):
     )
 
     problem: Mapped[str] = mapped_column(Text)
-    root_cause: Mapped[str] = mapped_column(Text)
+    root_cause: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     relevant_files: Mapped[List[str]] = mapped_column(JSON)
     relevant_symbols: Mapped[List[str]] = mapped_column(JSON)
     implementation_steps: Mapped[List[str]] = mapped_column(JSON)
