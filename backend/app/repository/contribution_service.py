@@ -175,10 +175,12 @@ class ContributionService:
             # Important: Rollback the session to clear any IntegrityErrors/poisoned transactions
             await db.rollback()
 
-            # Re-fetch agent_run if needed or just use ID to emit failure
+            # Use a fresh session to log the failure cleanly to avoid poisoned/closed transaction errors
             try:
-                await agent_run_service.emit_event(db, agent_run.id, "failed", f"Planning failed: {str(e)}")
-                await agent_run_service.complete_run(db, agent_run.id, success=False)
+                from backend.app.database import SessionLocal
+                async with SessionLocal() as log_db:
+                    await agent_run_service.emit_event(log_db, agent_run.id, "failed", f"Planning failed: {str(e)}")
+                    await agent_run_service.complete_run(log_db, agent_run.id, success=False)
             except Exception as inner_e:
                 logger.error(f"Failed to log planning failure: {str(inner_e)}")
 
@@ -256,13 +258,11 @@ class ContributionService:
         client: GitHubClient
     ) -> Dict[str, Any]:
         """
-        Triggers the autonomous implementation cycle (Implement -> Test -> Review loop).
+        Triggers the autonomous implementation cycle (returns immediately, runs loop in background).
         """
-        # 1. Fetch context
+        # 1. Fetch context to validate state before kicking off background task
         query = (
-            select(Contribution, Opportunity, Repository, SolutionPlan)
-            .join(Opportunity, Contribution.opportunity_id == Opportunity.id)
-            .join(Repository, Contribution.repository_id == Repository.id)
+            select(Contribution, SolutionPlan)
             .join(SolutionPlan, Contribution.id == SolutionPlan.contribution_id)
             .where(Contribution.id == contribution_id)
         )
@@ -270,9 +270,9 @@ class ContributionService:
         row = result.first()
 
         if not row:
-            raise LoomError("Contribution, Opportunity, or approved Plan not found", status_code=404)
+            raise LoomError("Contribution or approved Plan not found", status_code=404)
 
-        contribution, opportunity, repo, plan = row
+        contribution, plan = row
 
         if plan.status != "approved":
             raise LoomError("Solution plan must be approved before execution", status_code=400)
@@ -280,142 +280,170 @@ class ContributionService:
         if not contribution.workspace_id:
              raise LoomError("Contribution workspace must be setup before execution", status_code=400)
 
-        # 4. Create Agent Run for tracking
+        # 2. Create Agent Run immediately so the client can track it
         agent_run = await agent_run_service.create_agent_run(db, contribution_id, "coder")
 
-        # 5. Re-instantiate workspace
-        workspace = Workspace(workspace_id=contribution.workspace_id)
-        if not workspace.path.exists():
-            await agent_run_service.emit_event(db, agent_run.id, "step_started", "Restoring workspace...")
-            workspace = await self.setup_contribution_workspace(db, contribution_id, client)
-            await agent_run_service.emit_event(db, agent_run.id, "step_completed", "Workspace restored.")
+        # 3. Fire and forget the heavy loop as a background task
+        asyncio.create_task(self._background_execute_implementation(contribution_id, agent_run.id, client))
 
-        # 6. Detect technical context
-        build_info = await repository_service.detect_build_system(workspace)
-        test_info = await repository_service.detect_test_system(workspace, build_info)
-        test_command = test_info["test_commands"][0] if test_info["test_commands"] else None
+        return {
+            "agent_run_id": str(agent_run.id),
+            "status": "started"
+        }
 
-        # 7. Review-Fix Loop
-        review_cycles = 0
-        max_cycles = settings.MAX_REVIEW_CYCLES
-        review_feedback = None
-        final_impl_result = None
+    async def _background_execute_implementation(
+        self,
+        contribution_id: UUID,
+        agent_run_id: UUID,
+        client: GitHubClient
+    ):
+        """Long running background implementation task using its own fresh session."""
+        from backend.app.database import SessionLocal
+        async with SessionLocal() as db:
+            try:
+                query = (
+                    select(Contribution, Opportunity, Repository, SolutionPlan)
+                    .join(Opportunity, Contribution.opportunity_id == Opportunity.id)
+                    .join(Repository, Contribution.repository_id == Repository.id)
+                    .join(SolutionPlan, Contribution.id == SolutionPlan.contribution_id)
+                    .where(Contribution.id == contribution_id)
+                )
+                result = await db.execute(query)
+                row = result.first()
+                if not row:
+                    return
+                contribution, opportunity, repo, plan = row
 
-        try:
-            while review_cycles <= max_cycles:
-                logger.info(f"Review Cycle: Attempt {review_cycles + 1}/{max_cycles + 1}")
-                await agent_run_service.emit_event(db, agent_run.id, "step_started", f"Starting review cycle {review_cycles + 1}")
+                # 5. Re-instantiate workspace
+                workspace = Workspace(workspace_id=contribution.workspace_id)
+                if not workspace.path.exists():
+                    await agent_run_service.emit_event(db, agent_run_id, "step_started", "Restoring workspace...")
+                    workspace = await self.setup_contribution_workspace(db, contribution_id, client)
+                    await agent_run_service.emit_event(db, agent_run_id, "step_completed", "Workspace restored.")
 
-                # --- PHASE A: IMPLEMENTATION & DEBUGGING LOOP ---
-                retries = 0
-                max_retries = settings.MAX_DEBUG_RETRIES
-                debugging_context = None
+                # 6. Detect technical context
+                build_info = await repository_service.detect_build_system(workspace)
+                test_info = await repository_service.detect_test_system(workspace, build_info)
+                test_command = test_info["test_commands"][0] if test_info["test_commands"] else None
 
-                while retries <= max_retries:
-                    logger.info(f"Implementation Loop: Attempt {retries + 1}/{max_retries + 1}")
-                    await agent_run_service.emit_event(db, agent_run.id, "step_started", f"Applying implementation changes (Attempt {retries + 1})")
+                # 7. Review-Fix Loop
+                review_cycles = 0
+                max_cycles = settings.MAX_REVIEW_CYCLES
+                review_feedback = None
+                final_impl_result = None
 
-                    final_impl_result = await implementation_agent.implement_solution(
-                        db=db,
-                        repository=repo,
-                        plan=plan,
-                        contribution=contribution,
-                        workspace_path=workspace.path,
-                        test_command=test_command,
-                        debugging_context=debugging_context,
-                        review_feedback=review_feedback
-                    )
+                while review_cycles <= max_cycles:
+                    logger.info(f"Review Cycle: Attempt {review_cycles + 1}/{max_cycles + 1}")
+                    await agent_run_service.emit_event(db, agent_run_id, "step_started", f"Starting review cycle {review_cycles + 1}")
 
-                    for f in final_impl_result.files_modified:
-                        await agent_run_service.emit_event(db, agent_run.id, "file_changed", f"Modified {f}", {"path": f})
+                    # --- PHASE A: IMPLEMENTATION & DEBUGGING LOOP ---
+                    retries = 0
+                    max_retries = settings.MAX_DEBUG_RETRIES
+                    debugging_context = None
 
-                    if final_impl_result.success:
-                        await agent_run_service.emit_event(db, agent_run.id, "test_completed", "Implementation tests passed.")
-                        break
+                    while retries <= max_retries:
+                        logger.info(f"Implementation Loop: Attempt {retries + 1}/{max_retries + 1}")
+                        await agent_run_service.emit_event(db, agent_run_id, "step_started", f"Applying implementation changes (Attempt {retries + 1})")
 
-                    if not test_command:
-                        await agent_run_service.emit_event(db, agent_run.id, "test_completed", "No tests found for validation.")
-                        break
-
-                    if retries >= max_retries:
-                         await agent_run_service.emit_event(db, agent_run.id, "test_completed", "Tests failed after maximum retries.")
-                         break
-
-                    # Analyze failure and retry
-                    await agent_run_service.emit_event(db, agent_run.id, "test_completed", "Tests failed. Analyzing failure...")
-                    query = select(TestRun).where(TestRun.id == final_impl_result.test_run_id)
-                    res = await db.execute(query)
-                    test_run = res.scalars().first()
-
-                    if test_run:
-                        code_context = ""
-                        try:
-                            for f in plan.relevant_files[:2]:
-                                with open(workspace.path / f, "r") as src:
-                                    code_context += f"File {f}:\n{src.read()[-2000:]}\n\n"
-                        except Exception: pass
-
-                        analysis = await debugger_agent.analyze_failure(
-                            test_run=test_run,
-                            plan_context=plan.problem,
-                            code_context=code_context
+                        final_impl_result = await implementation_agent.implement_solution(
+                            db=db,
+                            repository=repo,
+                            plan=plan,
+                            contribution=contribution,
+                            workspace_path=workspace.path,
+                            test_command=test_command,
+                            debugging_context=debugging_context,
+                            review_feedback=review_feedback
                         )
-                        debugging_context = f"FAILURE ANALYSIS: {analysis.root_cause_analysis}\nSUGGESTED FIX: {analysis.suggested_fix}"
-                        await agent_run_service.emit_event(db, agent_run.id, "step_completed", "Failure analysis complete. Retrying implementation.")
 
-                    retries += 1
+                        for f in final_impl_result.files_modified:
+                            await agent_run_service.emit_event(db, agent_run_id, "file_changed", f"Modified {f}", {"path": f})
 
-                # --- PHASE B: CODE REVIEW ---
-                if not final_impl_result.success:
-                    break
+                        if final_impl_result.success:
+                            await agent_run_service.emit_event(db, agent_run_id, "test_completed", "Implementation tests passed.")
+                            break
 
-                await agent_run_service.emit_event(db, agent_run.id, "review_started", "Triggering autonomous technical audit.")
+                        if not test_command:
+                            await agent_run_service.emit_event(db, agent_run_id, "test_completed", "No tests found for validation.")
+                            break
 
-                # Generate diff for reviewer
-                diff_info = await repository_service.get_contribution_diff(workspace)
-                contribution.diff_summary = diff_info
-                await db.commit()
+                        if retries >= max_retries:
+                             await agent_run_service.emit_event(db, agent_run_id, "test_completed", "Tests failed after maximum retries.")
+                             break
 
-                review_record = await self.run_code_review(db, contribution_id)
-                await agent_run_service.emit_event(db, agent_run.id, "review_completed", f"Review finished: {review_record.decision}", {"decision": review_record.decision})
+                        # Analyze failure and retry
+                        await agent_run_service.emit_event(db, agent_run_id, "test_completed", "Tests failed. Analyzing failure...")
+                        query = select(TestRun).where(TestRun.id == final_impl_result.test_run_id)
+                        res = await db.execute(query)
+                        test_run = res.scalars().first()
 
-                if review_record.decision == "APPROVE":
-                    # --- PHASE C: SECRET SCANNING ---
-                    await agent_run_service.emit_event(db, agent_run.id, "step_started", "Scanning for potential secrets...")
-                    findings = secret_scanner.scan_text(contribution.diff_summary["diff"])
-                    if findings:
-                        await agent_run_service.emit_event(db, agent_run.id, "failed", f"Security Alert: {len(findings)} potential secrets detected.")
-                        contribution.status = "failed"
-                        contribution.diff_summary["security_findings"] = findings
-                        await db.commit()
-                        await agent_run_service.complete_run(db, agent_run.id, success=False)
-                        return {"success": False, "findings": findings}
+                        if test_run:
+                            code_context = ""
+                            try:
+                                for f in plan.relevant_files[:2]:
+                                    with open(workspace.path / f, "r") as src:
+                                        code_context += f"File {f}:\n{src.read()[-2000:]}\n\n"
+                            except Exception: pass
 
-                    await agent_run_service.emit_event(db, agent_run.id, "step_completed", "Secret scan passed.")
-                    contribution.status = "in_progress"
+                            analysis = await debugger_agent.analyze_failure(
+                                test_run=test_run,
+                                plan_context=plan.problem,
+                                code_context=code_context
+                            )
+                            debugging_context = f"FAILURE ANALYSIS: {analysis.root_cause_analysis}\nSUGGESTED FIX: {analysis.suggested_fix}"
+                            await agent_run_service.emit_event(db, agent_run_id, "step_completed", "Failure analysis complete. Retrying implementation.")
+
+                        retries += 1
+
+                    # --- PHASE B: CODE REVIEW ---
+                    if not final_impl_result.success:
+                        break
+
+                    await agent_run_service.emit_event(db, agent_run_id, "review_started", "Triggering autonomous technical audit.")
+
+                    # Generate diff for reviewer
+                    diff_info = await repository_service.get_contribution_diff(workspace)
+                    contribution.diff_summary = diff_info
                     await db.commit()
-                    await agent_run_service.complete_run(db, agent_run.id, success=True)
-                    return {
-                        "agent_run_id": str(agent_run.id),
-                        "result": final_impl_result.model_dump()
-                    }
 
-                if review_cycles < max_cycles:
-                    review_feedback = f"REVIEW FINDINGS: {review_record.summary}\nISSUES TO FIX: {json.dumps(review_record.review_issues, indent=2)}"
-                    review_cycles += 1
-                else:
-                    break
+                    review_record = await self.run_code_review(db, contribution_id)
+                    await agent_run_service.emit_event(db, agent_run_id, "review_completed", f"Review finished: {review_record.decision}", {"decision": review_record.decision})
 
-            contribution.status = "failed"
-            await db.commit()
-            await agent_run_service.complete_run(db, agent_run.id, success=False)
-            logger.error(f"Contribution {contribution_id} failed after maximum review cycles.")
-            return final_impl_result.model_dump() if final_impl_result else {"success": False, "summary": "Failed after maximum cycles."}
-        except Exception as e:
-            logger.error(f"Unexpected error in execute_implementation for {contribution_id}: {str(e)}", exc_info=True)
-            await agent_run_service.emit_event(db, agent_run.id, "failed", f"Unexpected error: {str(e)}")
-            await agent_run_service.complete_run(db, agent_run.id, success=False)
-            raise e
+                    if review_record.decision == "APPROVE":
+                        # --- PHASE C: SECRET SCANNING ---
+                        await agent_run_service.emit_event(db, agent_run_id, "step_started", "Scanning for potential secrets...")
+                        findings = secret_scanner.scan_text(contribution.diff_summary["diff"])
+                        if findings:
+                            await agent_run_service.emit_event(db, agent_run_id, "failed", f"Security Alert: {len(findings)} potential secrets detected.")
+                            contribution.status = "failed"
+                            contribution.diff_summary["security_findings"] = findings
+                            await db.commit()
+                            await agent_run_service.complete_run(db, agent_run_id, success=False)
+                            return
+
+                        await agent_run_service.emit_event(db, agent_run_id, "step_completed", "Secret scan passed.")
+                        contribution.status = "in_progress"
+                        await db.commit()
+                        await agent_run_service.complete_run(db, agent_run_id, success=True)
+                        return
+
+                    if review_cycles < max_cycles:
+                        review_feedback = f"REVIEW FINDINGS: {review_record.summary}\nISSUES TO FIX: {json.dumps(review_record.review_issues, indent=2)}"
+                        review_cycles += 1
+                    else:
+                        break
+
+                contribution.status = "failed"
+                await db.commit()
+                await agent_run_service.complete_run(db, agent_run_id, success=False)
+                logger.error(f"Contribution {contribution_id} failed after maximum review cycles.")
+            except Exception as e:
+                logger.error(f"Unexpected error in background execute_implementation for {contribution_id}: {str(e)}", exc_info=True)
+                try:
+                    await agent_run_service.emit_event(db, agent_run_id, "failed", f"Unexpected error: {str(e)}")
+                    await agent_run_service.complete_run(db, agent_run_id, success=False)
+                except Exception as inner_e:
+                    logger.error(f"Failed to log background implementation failure: {str(inner_e)}")
 
     async def run_code_review(
         self,

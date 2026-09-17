@@ -22,7 +22,7 @@ class OpenRouterProvider(AIProvider):
     def __init__(self):
         self.base_url = settings.OPENROUTER_BASE_URL
         self.api_key = settings.OPENROUTER_API_KEY
-        self.timeout = 60.0
+        self.timeout = 120.0
 
     def _get_headers(self) -> Dict[str, str]:
         headers = {

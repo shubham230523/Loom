@@ -57,6 +57,7 @@ export default function SolutionPlanScreen() {
       return ContributionService.generatePlan(repositoryId!, id!);
     },
     enabled: !!id && !!repositoryId,
+    refetchOnWindowFocus: false,
   });
 
   const plan = planResponse?.plan;
