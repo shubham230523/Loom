@@ -64,17 +64,24 @@ export default function AgentActivityScreen() {
       <View className="px-6 gap-8">
         <View className="items-center mt-4">
             <View className="w-20 h-20 rounded-3xl bg-primary/10 items-center justify-center mb-4">
-                <SymbolView
-                    name={isFailed ? "exclamationmark.triangle.fill" : "cpu.fill"}
-                    size={40}
-                    tintColor={isFailed ? "#EF4444" : theme.primary}
-                />
+                <Text className="text-4xl">{isFailed ? "⚠️" : isCompleted ? "✅" : "⚙️"}</Text>
             </View>
             <Text variant="title" className="text-2xl font-bold">Loom Coder</Text>
-            <Text variant="muted" className="text-center mt-1">
+            <Text variant={isFailed ? "destructive" : "muted"} className="text-center mt-1 font-medium">
                 {lastEvent?.message || "Initializing autonomous execution..."}
             </Text>
         </View>
+
+        {isFailed && (
+            <Card className="border-destructive/30 bg-destructive/5">
+                <CardContent className="py-4">
+                    <Text variant="small" weight="bold" className="text-destructive mb-1 uppercase tracking-wider">Error Details</Text>
+                    <Text variant="small" className="text-destructive/80">
+                        {lastEvent?.message || "The autonomous agent encountered an unexpected error during execution. Please check the logs or retry the operation."}
+                    </Text>
+                </CardContent>
+            </Card>
+        )}
 
         <Card>
             <CardHeader>
@@ -89,7 +96,7 @@ export default function AgentActivityScreen() {
         {thinkingText ? (
             <Card className="border-primary/30 bg-primary/5">
                 <CardHeader className="py-3 flex-row items-center gap-2">
-                    <SymbolView name="brain.head.profile" size={16} tintColor={theme.primary} />
+                    <Text className="text-sm">🧠</Text>
                     <CardTitle><Text variant="small" weight="bold" className="text-primary">Live Reasoning</Text></CardTitle>
                 </CardHeader>
                 <CardContent className="py-2">

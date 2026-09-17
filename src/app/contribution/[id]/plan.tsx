@@ -130,6 +130,7 @@ export default function SolutionPlanScreen() {
         {thinkingText ? (
             <View className="px-10 pb-20 items-center">
                 <Text variant="small" className="text-center font-mono text-muted-foreground leading-5 opacity-70">
+                    <Text className="text-primary opacity-100">🧠 </Text>
                     {thinkingText.length > 300 ? '...' + thinkingText.slice(-300) : thinkingText}
                     <Text className="text-primary font-bold"> |</Text>
                 </Text>

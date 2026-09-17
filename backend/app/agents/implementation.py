@@ -7,6 +7,7 @@ from backend.app.database import Repository, SolutionPlan, Contribution, TestRun
 from backend.app.ai import ai_gateway, ChatRequest, ChatMessage, MessageRole, TaskType
 from backend.app.sandbox import command_runner, SandboxResult
 from backend.app.agents.test_agent import test_agent
+from backend.app.services.agent_run_service import agent_run_service
 from backend.app.utils.logging import logger
 
 class FileChange(BaseModel):

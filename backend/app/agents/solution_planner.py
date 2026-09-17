@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.database import Repository, RepositoryIndex, Opportunity, Issue
 from backend.app.ai import ai_gateway, ChatRequest, ChatMessage, MessageRole, TaskType, semantic_search_service
+from backend.app.services.agent_run_service import agent_run_service
 from backend.app.utils.logging import logger
 
 class SolutionPlanOutput(BaseModel):
@@ -191,7 +192,6 @@ class SolutionPlannerAgent:
             ]
         )
 
-        from backend.app.services.agent_run_service import agent_run_service
         async def on_token(token: str):
             if agent_run_id:
                 await agent_run_service.emit_event(
