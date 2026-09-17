@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import AsyncIterator, List, Optional, Type, TypeVar
+from typing import AsyncIterator, List, Optional, Type, TypeVar, Any
 from pydantic import BaseModel
 from backend.app.ai.schemas import (
     ChatRequest,
