@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
+from uuid import UUID
 from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.database import Repository, SolutionPlan, Contribution, TestRun
