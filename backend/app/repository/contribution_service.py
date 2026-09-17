@@ -9,6 +9,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from backend.app.database import Repository, RepositoryIndex, Opportunity, Issue, Contribution, SolutionPlan, TestRun, CodeReview, SessionLocal
 from backend.app.repository.service import repository_service, Workspace
 from backend.app.github.service import github_service, GitHubClient
