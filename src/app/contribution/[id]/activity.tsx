@@ -61,7 +61,7 @@ export default function AgentActivityScreen() {
     <ScreenContainer className="py-6">
       <Stack.Screen options={{ title: 'Agent Activity', headerTitleAlign: 'center' }} />
 
-      <View className="px-6 gap-8">
+      <View className="px-6 gap-8 pb-16">
         <View className="items-center mt-4">
             <View className="w-20 h-20 rounded-3xl bg-primary/10 items-center justify-center mb-4">
                 <Text className="text-4xl">{isFailed ? "⚠️" : isCompleted ? "✅" : "⚙️"}</Text>
