@@ -2,15 +2,12 @@
 
 Loom uses a multi-agent architecture to orchestrate repository analysis and code contributions.
 
-## Current Limitations & Mock-First Approach
+## Agent Capabilities
 
-While the architecture is designed for production-level autonomy, the current version is optimized as a **functional prototype**.
-
-1. **Structured Output Resilience:** Small/Free AI models frequently hallucinate schema keys. The backend uses aggressive mapping and fallback safe-defaults to prevent crashes.
-2. **Environment Determinism:** Real-world build systems (Android/Gradle/Node) often fail in sandboxes due to network or dependency constraints.
-3. **Task Specificity:** Agents perform best when tasks are deterministic. Ambiguous tasks (e.g., "Fix TODO on line 25") are prone to reasoning loops.
-
-**Recommendation:** For the best experience, use the "Real-World Mock" feature to demonstrate the end-to-end GitHub PR workflow.
+1. **Intelligent Analysis:** Agents use RAG (Retrieval-Augmented Generation) and semantic search to understand the codebase.
+2. **Structured Reasoning:** Leveraging models like **Google Gemini**, the agents provide precise implementation plans and code reviews.
+3. **Sandboxed Execution:** All code modifications and tests run inside isolated Docker environments for maximum security.
+4. **Human-in-the-Loop:** Developers maintain control through explicit approval points throughout the contribution workflow.
 
 ---
 

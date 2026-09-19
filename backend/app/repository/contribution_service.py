@@ -341,8 +341,7 @@ class ContributionService:
                 # 6. Detect technical context
                 build_info = await repository_service.detect_build_system(workspace)
                 test_info = await repository_service.detect_test_system(workspace, build_info)
-                # Force test_command to None to skip testing phase as requested
-                test_command = None
+                test_command = test_info["test_commands"][0] if test_info["test_commands"] else None
 
                 # 7. Review-Fix Loop
                 review_cycles = 0
