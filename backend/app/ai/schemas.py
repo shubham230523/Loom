@@ -13,6 +13,7 @@ class ChatMessage(BaseModel):
     content: str
     name: Optional[str] = None
     tool_call_id: Optional[str] = None
+    file_data: Optional[Dict[str, str]] = None # {"data": "base64", "mime_type": "application/pdf"}
 
 class ChatRequest(BaseModel):
     messages: List[ChatMessage]

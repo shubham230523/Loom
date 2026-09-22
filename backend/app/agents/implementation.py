@@ -178,7 +178,8 @@ class ImplementationAgent:
                     db=db,
                     contribution=contribution,
                     workspace_path=workspace_path,
-                    test_command=test_command
+                    test_command=test_command,
+                    agent_run_id=agent_run_id
                 )
                 overall_success = (test_run.status == "success")
             except Exception as e:

@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     DEBUG: bool = True
     LOG_JSON: bool = False
+    LOG_LEVEL: str = "INFO"
     SECRET_KEY: str = "insecure-development-key"
     ALLOWED_HOSTS: List[str] = ["*"]
 
@@ -118,11 +119,11 @@ class Settings(BaseSettings):
 
     # Sandbox Settings
     SANDBOX_IMAGE: str = "thyrlian/android-sdk:latest"
-    SANDBOX_CPU_LIMIT: float = 1.0 # 1.0 CPU
-    SANDBOX_MEMORY_LIMIT: str = "512m"
-    SANDBOX_TIMEOUT: int = 900 # 15 minutes
-    SANDBOX_DISK_LIMIT: str = "1g"
-    SANDBOX_PIDS_LIMIT: int = 100
+    SANDBOX_CPU_LIMIT: float = 2.0 # 2.0 CPU
+    SANDBOX_MEMORY_LIMIT: str = "2g"
+    SANDBOX_TIMEOUT: int = 1200 # 20 minutes
+    SANDBOX_DISK_LIMIT: str = "2g"
+    SANDBOX_PIDS_LIMIT: int = 500
     SANDBOX_NETWORK_MODE: str = "none" # Disallow network by default
 
     model_config = SettingsConfigDict(

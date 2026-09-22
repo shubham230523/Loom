@@ -3,6 +3,7 @@ from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.database import TestRun, Contribution
 from backend.app.sandbox import command_runner, SandboxResult
+from backend.app.services.agent_run_service import agent_run_service
 from backend.app.utils.logging import logger
 
 class TestAgent:
@@ -11,12 +12,21 @@ class TestAgent:
         db: AsyncSession,
         contribution: Contribution,
         workspace_path: Path,
-        test_command: str
+        test_command: str,
+        agent_run_id: Optional[Any] = None
     ) -> TestRun:
         """
         Executes a test command in the sandbox and records the result.
         """
         logger.info(f"TestAgent: Executing tests for contribution {contribution.id}: {test_command}")
+
+        if agent_run_id:
+            await agent_run_service.emit_event(
+                db=db,
+                agent_run_id=agent_run_id,
+                event_type="step_started",
+                message=f"Executing validation command: {test_command}"
+            )
 
         # 1. Execute in sandbox
         sandbox_result: SandboxResult = await command_runner.run(
@@ -24,7 +34,27 @@ class TestAgent:
             command=test_command
         )
 
-        # 2. Map status
+        # 2. Emit logs to UI (Truncated for performance)
+        if agent_run_id:
+            if sandbox_result.stdout:
+                # Capture last 5000 characters to avoid huge payload overhead
+                stdout_tail = sandbox_result.stdout[-5000:]
+                await agent_run_service.emit_event(
+                    db=db,
+                    agent_run_id=agent_run_id,
+                    event_type="thinking_chunk",
+                    message=f"\n--- TEST OUTPUT (Last 5k chars) ---\n{stdout_tail}"
+                )
+            if sandbox_result.stderr:
+                stderr_tail = sandbox_result.stderr[-2000:]
+                await agent_run_service.emit_event(
+                    db=db,
+                    agent_run_id=agent_run_id,
+                    event_type="thinking_chunk",
+                    message=f"\n--- TEST ERRORS ---\n{stderr_tail}"
+                )
+
+        # 3. Map status
         status = "success" if sandbox_result.exit_code == 0 else "failure"
         if sandbox_result.timed_out:
             status = "error"

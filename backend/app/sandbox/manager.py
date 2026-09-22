@@ -89,21 +89,70 @@ class SandboxManager:
 
             status_code = -1
             timed_out = False
+
+            # Improvement: Periodically check logs while waiting to avoid "stuck" feeling
             try:
-                # wait() is a blocking call, use run_in_executor
                 import asyncio
                 loop = asyncio.get_running_loop()
-                wait_result = await loop.run_in_executor(None, lambda: container.wait(timeout=timeout))
-                status_code = wait_result.get("StatusCode", -1)
+
+                # Check interval
+                check_interval = 5
+                elapsed = 0
+                last_log_size = 0
+
+                while elapsed < timeout:
+                    # Use run_in_executor for sync container methods
+                    container_status = await loop.run_in_executor(None, lambda: (container.reload(), container.status)[1])
+
+                    if container_status != "running":
+                        break
+
+                    # Capture intermediate logs
+                    current_logs = await loop.run_in_executor(None, lambda: container.logs().decode("utf-8", errors="replace"))
+                    if len(current_logs) > last_log_size:
+                        new_content = current_logs[last_log_size:]
+                        print(new_content, end="", flush=True)
+                        last_log_size = len(current_logs)
+
+                    await asyncio.sleep(check_interval)
+                    elapsed += check_interval
+
+                container_status = await loop.run_in_executor(None, lambda: (container.reload(), container.status)[1])
+                if container_status == "running":
+                    logger.warning(f"Sandbox execution timed out after {timeout}s")
+                    await loop.run_in_executor(None, lambda: container.kill())
+                    timed_out = True
+                    status_code = 137
+                else:
+                    # Container finished, get exit code (non-blocking)
+                    wait_result = await loop.run_in_executor(None, lambda: container.wait())
+                    status_code = wait_result.get("StatusCode", -1)
+
             except Exception as e:
-                logger.warning(f"Sandbox execution timed out: {str(e)}")
-                container.kill()
-                timed_out = True
-                status_code = 137 # SIGKILL
+                logger.error(f"Error during sandbox wait loop: {str(e)}")
+                try:
+                    await loop.run_in_executor(None, lambda: container.kill())
+                except: pass
+                status_code = 1
 
             duration = time.time() - start_time
-            stdout = container.logs(stdout=True, stderr=False).decode("utf-8", errors="replace")
-            stderr = container.logs(stdout=False, stderr=True).decode("utf-8", errors="replace")
+
+            # Safely capture logs at the end
+            stdout = ""
+            stderr = ""
+            try:
+                stdout = await loop.run_in_executor(None, lambda: container.logs(stdout=True, stderr=False).decode("utf-8", errors="replace"))
+                stderr = await loop.run_in_executor(None, lambda: container.logs(stdout=False, stderr=True).decode("utf-8", errors="replace"))
+            except Exception as log_err:
+                logger.warning(f"Failed to capture final logs: {str(log_err)}")
+
+            # Print logs to the main terminal for visibility during development
+            if stdout:
+                print("\n--- SANDBOX STDOUT ---")
+                print(stdout)
+            if stderr:
+                print("\n--- SANDBOX STDERR ---")
+                print(stderr)
 
             return SandboxResult(
                 exit_code=status_code,

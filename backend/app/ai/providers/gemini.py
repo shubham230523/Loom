@@ -1,5 +1,6 @@
 import json
 import httpx
+import re
 from typing import AsyncIterator, List, Optional, Type, TypeVar, Dict, Any
 from pydantic import BaseModel
 from backend.app.ai.base import AIProvider
@@ -31,11 +32,17 @@ class GeminiProvider(AIProvider):
     async def _handle_error(self, response: httpx.Response):
         status_code = response.status_code
         try:
-            error_data = response.json()
+            # Ensure content is read for both streaming and normal responses
+            content = await response.aread()
+            error_data = json.loads(content)
             error_info = error_data.get("error", {})
             message = error_info.get("message", "Unknown Gemini Error")
         except Exception:
-            message = response.text or "Unknown Gemini Error"
+            try:
+                # If we couldn't parse JSON, try to get raw text
+                message = response.text if not response.is_closed else "Unknown Gemini Error (response closed)"
+            except Exception:
+                message = "Unknown Gemini Error"
 
         logger.error(f"Gemini Error {status_code}: {message}")
 
@@ -49,20 +56,51 @@ class GeminiProvider(AIProvider):
     def _map_messages(self, messages: List[ChatMessage]) -> Dict[str, Any]:
         """
         Maps standard ChatMessages to Gemini format.
-        Handles system messages separately.
+        Handles system messages and multimodal file data.
         """
         system_instruction = None
         contents = []
 
-        for m in messages:
-            if m.role == MessageRole.SYSTEM:
-                system_instruction = {"parts": [{"text": m.content}]}
-            else:
-                role = "user" if m.role == MessageRole.USER else "model"
-                contents.append({
-                    "role": role,
-                    "parts": [{"text": m.content}]
-                })
+        # If any message has file_data, we use the content array structure (multimodal)
+        has_file = any(m.file_data for m in messages)
+
+        if has_file:
+            for m in messages:
+                if m.role == MessageRole.SYSTEM:
+                    system_instruction = {"parts": [{"text": m.content}]}
+                else:
+                    role = "user" if m.role == MessageRole.USER else "model"
+                    parts = [{"text": m.content}]
+                    if m.file_data:
+                        parts.append({
+                            "inlineData": {
+                                "data": m.file_data["data"],
+                                "mimeType": m.file_data.get("mime_type", "application/octet-stream")
+                            }
+                        })
+                    contents.append({
+                        "role": role,
+                        "parts": parts
+                    })
+        else:
+            # ApplyAI style: combine into a single prompt for standard text flow
+            # This often leads to better instruction following for text-only tasks
+            prompt_parts = []
+            for m in messages:
+                if m.role == MessageRole.SYSTEM:
+                    system_instruction = {"parts": [{"text": m.content}]}
+                else:
+                    prompt_parts.append(f"[{m.role.upper()}]: {m.content}")
+
+            prompt = "\n\n".join(prompt_parts)
+            if not prompt:
+                # Fallback if only system instruction exists
+                prompt = "Please proceed."
+
+            contents = [{
+                "role": "user",
+                "parts": [{"text": prompt}]
+            }]
 
         return {
             "contents": contents,
@@ -231,10 +269,22 @@ class GeminiProvider(AIProvider):
         # Gemini supports response_mime_type="application/json"
         request.response_format = {"type": "json_object"}
 
-        # Add instruction to ensure JSON
-        json_instruction = f"Return response as a valid JSON object matching the requested schema. DO NOT include markdown formatting like ```json."
-        if not any(json_instruction in m.content for m in request.messages):
-             request.messages.append(ChatMessage(role=MessageRole.SYSTEM, content=json_instruction))
+        # ApplyAI Style: Inject schema directly into the prompt for maximum accuracy
+        schema_json = json.dumps(response_model.model_json_schema(), indent=2)
+        json_instruction = (
+            f"\n\nCRITICAL: Your response MUST be a valid JSON object matching this schema:\n{schema_json}\n"
+            f"Return ONLY the JSON object. Do not include markdown formatting or explanations."
+        )
+
+        # Append instruction to the last user message
+        if request.messages:
+            last_msg = request.messages[-1]
+            if last_msg.role == MessageRole.USER:
+                last_msg.content += json_instruction
+            else:
+                request.messages.append(ChatMessage(role=MessageRole.USER, content=json_instruction))
+        else:
+             request.messages.append(ChatMessage(role=MessageRole.USER, content=json_instruction))
 
         content = ""
         last_finish_reason = None
@@ -248,8 +298,8 @@ class GeminiProvider(AIProvider):
                         last_finish_reason = chunk.finish_reason
             except Exception as stream_err:
                 logger.error(f"Gemini Streaming error during structured parse: {str(stream_err)}")
-                # If we have some content, try to proceed, otherwise re-raise
-                if not content: raise stream_err
+                # DO NOT proceed if the stream was interrupted, as the JSON will be malformed
+                raise stream_err
         else:
             response = await self.chat(request)
             content = response.message.content
@@ -259,25 +309,13 @@ class GeminiProvider(AIProvider):
             logger.error("Gemini: Received empty content in structured request")
             raise LoomError("AI Provider returned empty response", status_code=502)
 
-        # Clean content if it contains markdown markers
-        content_original = content
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0].strip()
-        elif "```" in content:
-            parts = content.split("```")
-            for part in parts:
-                part = part.strip()
-                if part.startswith("{") and part.endswith("}"):
-                    content = part
-                    break
+        # ApplyAI Style: Clean content using regex to find JSON block
+        json_match = re.search(r'(\{[\s\S]*\}|\[[\s\S]*\])', content)
+        if json_match:
+            content = json_match.group(0)
 
-        # Basic cleanup
+        # Cleanup any potential markdown or whitespace
         content = content.strip()
-        if not (content.startswith("{") and content.endswith("}")):
-            start = content_original.find("{")
-            end = content_original.rfind("}")
-            if start != -1 and end != -1 and end > start:
-                content = content_original[start:end+1]
 
         try:
             return response_model.model_validate_json(content)
@@ -359,19 +397,20 @@ class GeminiProvider(AIProvider):
 
     async def generate_embeddings(self, request: EmbeddingsRequest) -> EmbeddingsResponse:
         model = request.model or "text-embedding-004"
-        # Try v1beta for embeddings as it usually supports the latest embedding models
-        v1_base = "https://generativelanguage.googleapis.com/v1beta"
-        url = f"{v1_base}/models/{model}:embedContent?key={self.api_key}"
+        # Use v1 for stable embedding models
+        v1_base = "https://generativelanguage.googleapis.com/v1"
+
+        # Ensure model name is properly formatted
+        model_id = model if model.startswith("models/") else f"models/{model}"
+        url = f"{v1_base}/{model_id}:embedContent?key={self.api_key}"
 
         inputs = request.input if isinstance(request.input, list) else [request.input]
 
-        # Gemini embedContent takes a single content or batchEmbedContents
-        # For simplicity, we implement single or loop
         embeddings = []
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             for text in inputs:
+                # The REST API for embedContent doesn't need 'model' in payload when in URL
                 payload = {
-                    "model": f"models/{model}",
                     "content": {"parts": [{"text": text}]}
                 }
                 try:
@@ -382,6 +421,7 @@ class GeminiProvider(AIProvider):
                     data = response.json()
                     embeddings.append(data.get("embedding", {}).get("values", []))
                 except Exception as e:
+                    if isinstance(e, LoomError): raise e
                     logger.error(f"Gemini Embeddings Error: {str(e)}")
                     raise LoomError(f"Failed to generate embeddings: {str(e)}", status_code=500)
 
