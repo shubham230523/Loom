@@ -428,8 +428,6 @@ class ContributionService:
                         diff_info = await repository_service.get_contribution_diff(workspace)
                         contribution.diff_summary = diff_info
                         await db.commit()
-
-                        # Proceed to Phase C
                     else:
                         await agent_run_service.emit_event(db, agent_run_id, "review_started", "Triggering autonomous technical audit.")
 
@@ -450,6 +448,46 @@ class ContributionService:
                                 break
 
                     # --- PHASE C: SECRET SCANNING ---
+                    await agent_run_service.emit_event(db, agent_run_id, "step_started", "Scanning for potential secrets...")
+                    findings = secret_scanner.scan_text(contribution.diff_summary["diff"])
+                    if findings:
+                        await agent_run_service.emit_event(db, agent_run_id, "failed", f"Security Alert: {len(findings)} potential secrets detected.")
+                        contribution.status = "failed"
+                        contribution.diff_summary["security_findings"] = findings
+                        await db.commit()
+                        await agent_run_service.complete_run(db, agent_run_id, success=False)
+                        return
+
+                    await agent_run_service.emit_event(db, agent_run_id, "step_completed", "Secret scan passed.")
+                    contribution.status = "in_progress"
+                    await db.commit()
+
+                    # --- PHASE D: AUTO PR (OPTIONAL) ---
+                    if settings.AUTO_PUSH_AND_PR:
+                        await agent_run_service.emit_event(db, agent_run_id, "step_started", "Auto-Push enabled. Pushing changes to GitHub...")
+                        try:
+                            # We need a GitHub client. We can try to get it from the user's account
+                            # For simplicity in this loop, we might need to rethink how client is passed
+                            # but let's try to proceed if we have it.
+                            if client:
+                                push_result = await self.push_to_github(db, contribution_id, client)
+                                await agent_run_service.emit_event(db, agent_run_id, "step_completed", f"Branch pushed: {push_result['branch']}")
+
+                                await agent_run_service.emit_event(db, agent_run_id, "step_started", "Creating Pull Request...")
+                                pr_result = await self.create_github_pr(db, contribution_id, client)
+                                await agent_run_service.emit_event(db, agent_run_id, "step_completed", f"PR Created: {pr_result['url']}")
+
+                                await agent_run_service.complete_run(db, agent_run_id, success=True)
+                                return
+                            else:
+                                await agent_run_service.emit_event(db, agent_run_id, "failed", "Auto-PR failed: GitHub client not available in background task.")
+                        except Exception as pr_err:
+                            logger.error(f"Auto-PR failure: {str(pr_err)}")
+                            await agent_run_service.emit_event(db, agent_run_id, "failed", f"Auto-PR failed: {str(pr_err)}")
+                            # Don't return, let it finish normally as in_progress
+
+                    await agent_run_service.complete_run(db, agent_run_id, success=True)
+                    return
                 await db.commit()
                 await agent_run_service.complete_run(db, agent_run_id, success=False)
                 logger.error(f"Contribution {contribution_id} failed after maximum review cycles.")

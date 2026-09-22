@@ -132,6 +132,9 @@ class Settings(BaseSettings):
     # Code Review Settings
     ENABLE_CODE_REVIEW: bool = False
 
+    # Automation Settings
+    AUTO_PUSH_AND_PR: bool = False
+
     # Cache Volume Mounts for Speed Optimization
     LOCAL_GRADLE_CACHE_DIR: Optional[str] = os.path.expanduser("~/.gradle")
 
