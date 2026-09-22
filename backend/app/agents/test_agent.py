@@ -28,7 +28,8 @@ class TestAgent:
                 command="SKIPPED",
                 exit_code=0,
                 status="success",
-                stdout="Tests skipped by configuration"
+                stdout="Tests skipped by configuration",
+                duration=0.0
             )
             db.add(test_run)
             await db.commit()

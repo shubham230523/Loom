@@ -58,10 +58,10 @@ export default function AgentActivityScreen() {
   const isFailed = contribution?.status === 'failed' || lastEvent?.event_type === 'failed';
 
   return (
-    <ScreenContainer className="py-6">
+    <ScreenContainer scrollable className="py-6">
       <Stack.Screen options={{ title: 'Agent Activity', headerTitleAlign: 'center' }} />
 
-      <View className="px-6 gap-8 pb-16">
+      <View className="px-6 gap-8 pb-32">
         <View className="items-center mt-4">
             <View className="w-20 h-20 rounded-3xl bg-primary/10 items-center justify-center mb-4">
                 <Text className="text-4xl">{isFailed ? "⚠️" : isCompleted ? "✅" : "⚙️"}</Text>
@@ -112,11 +112,11 @@ export default function AgentActivityScreen() {
         ) : null}
 
         {/* Live Logs / Events List */}
-        <View className="flex-1">
+        <View className="mb-8">
             <Text weight="bold" className="text-lg mb-3 px-1">Detailed Logs</Text>
-            <ScrollView
+            <View
                 className="bg-muted/30 rounded-xl p-4 border border-border/50"
-                contentContainerStyle={{ gap: 12 }}
+                style={{ gap: 12 }}
             >
                 {events.length === 0 && (
                     <Text variant="small" className="text-muted-foreground italic text-center py-4">
@@ -143,7 +143,7 @@ export default function AgentActivityScreen() {
                         </Text>
                     </View>
                 ))}
-            </ScrollView>
+            </View>
         </View>
 
         {/* Action Footer */}

@@ -774,7 +774,8 @@ class ContributionService:
             status_emoji = "✅" if test_run.status == "success" else "❌"
             body += f"{status_emoji} Tests **{test_run.status.upper()}**\n"
             body += f"- Command: `{test_run.command}`\n"
-            body += f"- Duration: {round(test_run.duration, 2)}s\n"
+            if test_run.duration is not None:
+                body += f"- Duration: {round(test_run.duration, 2)}s\n"
         else:
             body += "⚠️ No automated tests were executed for this contribution.\n"
 

@@ -25,18 +25,21 @@ export function ScreenContainer({
   const content = (
     <View
       className={cn(
-        'flex-1 bg-background items-center',
+        scrollable ? 'w-full' : 'flex-1',
+        'bg-background items-center',
         className
       )}
       style={{
         paddingTop: insets.top,
         paddingBottom: insets.bottom,
+        minHeight: scrollable ? '100%' : undefined,
       }}
       {...props}
     >
       <View
         className={cn(
-          'w-full flex-1',
+          'w-full',
+          !scrollable && 'flex-1',
           withPadding && 'px-4'
         )}
         style={{ maxWidth }}
