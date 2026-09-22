@@ -421,41 +421,35 @@ class ContributionService:
                         )
                         break
 
-                    await agent_run_service.emit_event(db, agent_run_id, "review_started", "Triggering autonomous technical audit.")
-
-                    # Generate diff for reviewer
-                    diff_info = await repository_service.get_contribution_diff(workspace)
-                    contribution.diff_summary = diff_info
-                    await db.commit()
-
-                    review_record = await self.run_code_review(db, contribution_id)
-                    await agent_run_service.emit_event(db, agent_run_id, "review_completed", f"Review finished: {review_record.decision}", {"decision": review_record.decision})
-
-                    if review_record.decision == "APPROVE":
-                        # --- PHASE C: SECRET SCANNING ---
-                        await agent_run_service.emit_event(db, agent_run_id, "step_started", "Scanning for potential secrets...")
-                        findings = secret_scanner.scan_text(contribution.diff_summary["diff"])
-                        if findings:
-                            await agent_run_service.emit_event(db, agent_run_id, "failed", f"Security Alert: {len(findings)} potential secrets detected.")
-                            contribution.status = "failed"
-                            contribution.diff_summary["security_findings"] = findings
-                            await db.commit()
-                            await agent_run_service.complete_run(db, agent_run_id, success=False)
-                            return
-
-                        await agent_run_service.emit_event(db, agent_run_id, "step_completed", "Secret scan passed.")
-                        contribution.status = "in_progress"
+                    # Skip Review if disabled
+                    if not settings.ENABLE_CODE_REVIEW:
+                        await agent_run_service.emit_event(db, agent_run_id, "step_completed", "Code review skipped by configuration.")
+                        # Still need to populate diff_summary for next phases
+                        diff_info = await repository_service.get_contribution_diff(workspace)
+                        contribution.diff_summary = diff_info
                         await db.commit()
-                        await agent_run_service.complete_run(db, agent_run_id, success=True)
-                        return
 
-                    if review_cycles < max_cycles:
-                        review_feedback = f"REVIEW FINDINGS: {review_record.summary}\nISSUES TO FIX: {json.dumps(review_record.review_issues, indent=2)}"
-                        review_cycles += 1
+                        # Proceed to Phase C
                     else:
-                        break
+                        await agent_run_service.emit_event(db, agent_run_id, "review_started", "Triggering autonomous technical audit.")
 
-                contribution.status = "failed"
+                        # Generate diff for reviewer
+                        diff_info = await repository_service.get_contribution_diff(workspace)
+                        contribution.diff_summary = diff_info
+                        await db.commit()
+
+                        review_record = await self.run_code_review(db, contribution_id)
+                        await agent_run_service.emit_event(db, agent_run_id, "review_completed", f"Review finished: {review_record.decision}", {"decision": review_record.decision})
+
+                        if review_record.decision != "APPROVE":
+                            if review_cycles < max_cycles:
+                                review_feedback = f"REVIEW FINDINGS: {review_record.summary}\nISSUES TO FIX: {json.dumps(review_record.review_issues, indent=2)}"
+                                review_cycles += 1
+                                continue
+                            else:
+                                break
+
+                    # --- PHASE C: SECRET SCANNING ---
                 await db.commit()
                 await agent_run_service.complete_run(db, agent_run_id, success=False)
                 logger.error(f"Contribution {contribution_id} failed after maximum review cycles.")

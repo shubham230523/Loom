@@ -70,9 +70,11 @@ class SandboxManager:
             "detach": True
         }
 
-        # Disk limit requires specialized storage driver (overlay2 with xfs prpquota etc)
-        # We'll omit it from general config to avoid errors on standard setups,
-        # but the request mentioned it. Docker doesn't support easy disk limits on all hosts.
+        # Mount local gradle cache to accelerate build if available
+        if "gradle" in command and settings.LOCAL_GRADLE_CACHE_DIR and os.path.exists(settings.LOCAL_GRADLE_CACHE_DIR):
+            container_config["volumes"] = {
+                settings.LOCAL_GRADLE_CACHE_DIR: {"bind": "/root/.gradle", "mode": "rw"}
+            }
 
         container = None
         start_time = time.time()

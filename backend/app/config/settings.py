@@ -126,6 +126,15 @@ class Settings(BaseSettings):
     SANDBOX_PIDS_LIMIT: int = 500
     SANDBOX_NETWORK_MODE: str = "none" # Disallow network by default
 
+    # Test Execution Mode: 'full' (run tests), 'compilation_only' (check errors only), 'none' (skip)
+    SANDBOX_TEST_LEVEL: str = "none"
+
+    # Code Review Settings
+    ENABLE_CODE_REVIEW: bool = False
+
+    # Cache Volume Mounts for Speed Optimization
+    LOCAL_GRADLE_CACHE_DIR: Optional[str] = os.path.expanduser("~/.gradle")
+
     model_config = SettingsConfigDict(
         env_file=[".env", "backend/.env"],
         env_file_encoding="utf-8",

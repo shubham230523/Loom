@@ -23,7 +23,7 @@ class GeminiProvider(AIProvider):
     def __init__(self):
         self.base_url = settings.GEMINI_BASE_URL
         self.api_key = settings.GEMINI_API_KEY
-        self.timeout = 60.0
+        self.timeout = 120.0
 
     def _get_url(self, model: str, action: str) -> str:
         # Action is usually generateContent or streamGenerateContent
