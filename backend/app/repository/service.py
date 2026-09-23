@@ -207,8 +207,8 @@ class RepositoryService:
                 cwd=workspace.path
             )
 
-            # 4. Push to remote
-            cmd = ["git", "push", authenticated_url, branch_name]
+            # 4. Push to remote (using -f to update existing feature branches safely)
+            cmd = ["git", "push", "-f", authenticated_url, branch_name]
             returncode, stdout, stderr = await self._run_git_command(cmd, cwd=workspace.path)
 
             if returncode != 0:

@@ -16,6 +16,20 @@ export class AuthService {
       // 1. Get authorization URL from backend
       const { data: authorizeData } = await apiClient.get<AuthorizeResponse>('/api/v1/auth/github/authorize');
 
+      // Check for standalone mock mode
+      if (authorizeData.authorization_url === '#') {
+        const demoUser = {
+          id: 1,
+          github_id: 12345,
+          username: 'loom-demo-user',
+          avatar_url: 'https://github.com/ghost.png',
+        };
+        await store.setToken('demo-access-token');
+        store.setUser(demoUser);
+        store.setLoading(false);
+        return;
+      }
+
       // 2. Open browser for GitHub OAuth flow
       const result = await WebBrowser.openAuthSessionAsync(
         authorizeData.authorization_url,
@@ -51,11 +65,12 @@ export class AuthService {
 
   static async fetchCurrentUser() {
     const store = useAuthStore.getState();
-    const token = await store.getToken();
+    let token = await store.getToken();
 
     if (!token) {
-      store.setLoading(false);
-      return;
+      // In web standalone demo mode, default to demo session
+      token = 'demo-access-token';
+      await store.setToken(token);
     }
 
     try {
