@@ -3,20 +3,39 @@ import * as AuthSession from 'expo-auth-session';
 import apiClient from './api-client';
 import { AuthorizeResponse, AuthResponse, User } from '@/types/auth';
 import { useAuthStore } from '@/store/auth-store';
+import { useSettingsStore } from '@/store/settings-store';
 
 WebBrowser.maybeCompleteAuthSession();
 
 export class AuthService {
   static async startGitHubLogin() {
     const store = useAuthStore.getState();
+    const { isMockMode } = useSettingsStore.getState();
+
     store.setLoading(true);
     store.setError(null);
+
+    // If Mock Mode is enabled OR if running on web demo without custom API URL
+    const isStandaloneWeb = typeof window !== 'undefined' && !process.env.EXPO_PUBLIC_API_URL;
+
+    if (isMockMode || isStandaloneWeb) {
+      const demoUser = {
+        id: 1,
+        github_id: 12345,
+        username: 'loom-demo-user',
+        avatar_url: 'https://github.com/ghost.png',
+      };
+      await store.setToken('demo-access-token');
+      store.setUser(demoUser);
+      store.setLoading(false);
+      return;
+    }
 
     try {
       // 1. Get authorization URL from backend
       const { data: authorizeData } = await apiClient.get<AuthorizeResponse>('/api/v1/auth/github/authorize');
 
-      // Check for standalone mock mode
+      // Check for standalone mock mode fallback
       if (authorizeData.authorization_url === '#') {
         const demoUser = {
           id: 1,
