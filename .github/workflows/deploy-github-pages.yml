@@ -33,7 +33,9 @@ jobs:
         run: npm ci
 
       - name: Export Expo Web Static Build
-        run: npx expo export -p web
+        run: |
+          npx expo export -p web --base-url /Loom/
+          touch ./dist/.nojekyll
 
       - name: Upload Artifact
         uses: actions/upload-pages-artifact@v3

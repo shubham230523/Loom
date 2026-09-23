@@ -2,9 +2,6 @@
 
 **AI-Powered Open-Source Contribution Platform**
 
-[![Live Web Demo](https://img.shields.io/badge/Live_Demo-GitHub_Pages-208AEF?style=for-the-badge&logo=github)](https://shubham230523.github.io/Loom/)
-👉 **Live Web Demo**: [https://shubham230523.github.io/Loom/](https://shubham230523.github.io/Loom/)
-
 Loom is a full-stack platform designed to simplify open-source contributions. It combines a **React Native / Expo** cross-platform frontend with a **FastAPI multi-agent Python backend** to discover GitHub repositories, analyze codebases using vector search (`pgvector`), generate technical implementation plans, modify code in sandboxed environments, run tests, conduct autonomous code reviews, and create real GitHub Pull Requests.
 
 ---
@@ -234,7 +231,7 @@ In a new terminal window:
 ## 🌐 Live Web Demo (GitHub Pages)
 
 Check out the live interactive web demo hosted directly on GitHub Pages:
-🔗 **[https://shubham230523.github.io/Loom/](https://shubham230523.github.io/Loom/)**
+🔗 **https://shubham230523.github.io/Loom/**
 
 * **Standalone Demo Mode**: When `apiClient` cannot reach a running backend server, it catches network errors and returns realistic mock data for auth, repo search, opportunity discovery, solution planning, activity streaming, and review diffs.
 * **Automated CI/CD**: Pushing to `master` or `main` automatically builds and deploys the static web build to GitHub Pages via `.github/workflows/deploy-github-pages.yml`.

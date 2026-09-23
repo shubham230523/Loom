@@ -38,6 +38,7 @@
       "expo-web-browser"
     ],
     "experiments": {
+      "baseUrl": "/Loom",
       "typedRoutes": true,
       "reactCompiler": true
     }
