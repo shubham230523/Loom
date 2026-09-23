@@ -34,7 +34,7 @@ jobs:
 
       - name: Export Expo Web Static Build
         run: |
-          npx expo export -p web --base-url /Loom/
+          npx expo export -p web
           touch ./dist/.nojekyll
 
       - name: Upload Artifact
