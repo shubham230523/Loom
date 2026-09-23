@@ -65,6 +65,18 @@ export class AuthService {
 
   static async fetchCurrentUser() {
     const store = useAuthStore.getState();
+
+    // Check if we are inside an OAuth callback popup window on Web
+    if (typeof window !== 'undefined' && window.location.search) {
+      const search = window.location.search;
+      if (search.includes('code=') || search.includes('state=')) {
+        // Do NOT auto-login or redirect in the popup window.
+        // Let WebBrowser.maybeCompleteAuthSession() pass the code to the parent window and close this popup.
+        store.setLoading(false);
+        return;
+      }
+    }
+
     let token = await store.getToken();
 
     if (!token) {
